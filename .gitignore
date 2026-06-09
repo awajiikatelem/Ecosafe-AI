@@ -6,3 +6,23 @@ ecosafe-backend/dist/
 
 .env
 *.log
+
+# Dependencies
+node_modules/
+
+# Vite cache
+.vite/
+
+# Build files
+dist/
+build/
+
+# Environment variables
+.env
+
+# SQLite database
+*.db
+
+# SQLite binaries
+sqlite3.exe
+sqlite-tools-win-x64-3530100/
