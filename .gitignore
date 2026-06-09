@@ -1,0 +1,8 @@
+ecosafe-frontend/node_modules/
+ecosafe-backend/node_modules/
+
+ecosafe-frontend/dist/
+ecosafe-backend/dist/
+
+.env
+*.log
