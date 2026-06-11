@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 
 const db = require("./db");
-const verifyToken = require("./middleware/verifyToken");
+const verifyToken = require("./Middleware/verifyToken");
 const { generateSafetyTips, validateImageAI } = require("./ai/aiHelper");
 const detectPriority = require("./ai/detectPriority");
 const {
