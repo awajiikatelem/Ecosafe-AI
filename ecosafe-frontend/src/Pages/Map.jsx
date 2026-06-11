@@ -92,7 +92,7 @@ export default function AdvancedMap() {
     const loadReports = async () => {
       try {
         const res = await fetch(
-          "http://localhost:5000/all-reports"
+          "https://ecosafe-ai-2.onrender.com/all-reports"
         );
 
         const data = await res.json();

@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "https://ecosafe-ai-2.onrender.com";
 
 /* ================= AUTH ================= */
 export const registerUser = async (data) => {

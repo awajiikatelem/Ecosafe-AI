@@ -20,7 +20,7 @@ export default function UserAlerts() {
   const fetchAlerts = async () => {
     try {
       const res = await fetch(
-        "http://localhost:5000/public/alerts"
+        "https://ecosafe-ai-2.onrender.com/public/alerts"
       );
 
       const data = await res.json();

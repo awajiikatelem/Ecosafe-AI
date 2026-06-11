@@ -31,7 +31,7 @@ export default function IncidentReports() {
     try {
       setLoading(true);
 
-      const res = await fetch("http://localhost:5000/admin/reports", {
+      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/reports", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -51,7 +51,7 @@ export default function IncidentReports() {
 
   const updateStatus = async (id, status) => {
     try {
-      await fetch(`http://localhost:5000/admin/report/${id}`, {
+      await fetch(`https://ecosafe-ai-2.onrender.com/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

@@ -43,7 +43,7 @@ export default function UserDashboard() {
 
     const fetchReports = async () => {
       try {
-        const res = await fetch("http://localhost:5000/report", {
+        const res = await fetch("https://ecosafe-ai-2.onrender.com/report", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -60,7 +60,7 @@ export default function UserDashboard() {
 
     const fetchProfile = async () => {
       try {
-        const res = await fetch("http://localhost:5000/profile", {
+        const res = await fetch("https://ecosafe-ai-2.onrender.com/profile", {
           headers: {
             Authorization: `Bearer ${token}`,
           },

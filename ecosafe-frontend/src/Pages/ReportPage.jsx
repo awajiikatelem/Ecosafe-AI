@@ -154,7 +154,7 @@ export default function ReportHazard() {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:5000/report", {
+      const res = await fetch("https://ecosafe-ai-2.onrender.com/report", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

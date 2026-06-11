@@ -203,7 +203,7 @@ app.post("/report", verifyToken, async (req, res) => {
   try {
     // AI Report Analysis and Prioritization
     const aiAnalysis = analyzeAndPrioritizeAI(category, title, description, image, location);
-    
+
     // AI Verification and Moderation
     const aiVerify = verifyReportAI(category, description, image, location);
 
@@ -258,9 +258,9 @@ app.post("/report", verifyToken, async (req, res) => {
     // Reward points: +10 base points, +5 if valid image evidence uploaded
     const pointsToAward = aiImageValid === 1 ? 15 : 10;
     updateUserPointsAndBadge(req.user.id, pointsToAward, (err, rewardInfo) => {
-      res.json({ 
-        message: "Report submitted", 
-        priority, 
+      res.json({
+        message: "Report submitted",
+        priority,
         aiTips: aiTipsList,
         aiImageValid,
         aiImageAnalysis,

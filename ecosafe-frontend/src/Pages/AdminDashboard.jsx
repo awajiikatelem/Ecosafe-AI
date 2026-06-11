@@ -57,7 +57,7 @@ export default function AdminDashboard() {
   /* ================= FETCH REPORTS ================= */
   const fetchReports = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:5000/admin/reports", {
+      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/reports", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -76,7 +76,7 @@ export default function AdminDashboard() {
   /* ================= FETCH STATS ================= */
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:5000/admin/stats", {
+      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/stats", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -195,7 +195,7 @@ export default function AdminDashboard() {
   /* ================= APPROVE REPORT ================= */
   const approve = async (id) => {
     try {
-      await fetch(`http://localhost:5000/admin/report/${id}`, {
+      await fetch(`https://ecosafe-ai-2.onrender.com/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -216,7 +216,7 @@ export default function AdminDashboard() {
   /* ================= REJECT REPORT ================= */
   const reject = async (id) => {
     try {
-      await fetch(`http://localhost:5000/admin/report/${id}`, {
+      await fetch(`https://ecosafe-ai-2.onrender.com/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
