@@ -227,7 +227,7 @@ export default function UserDashboard() {
         </div>
 
         {/* STATS (REAL DATA) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-5 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
           <StatCard title="Total Reports" value={reports.length} icon={<FileText size={20} />} dark={dark} />
           <StatCard
             title="Critical"

@@ -85,16 +85,16 @@ export default function MyReports() {
 
         <div className="flex gap-3 flex-wrap">
           <button
-            onClick={() => navigate("/report-hazard")}
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg"
+            onClick={() => navigate("/ReportPage")}
+            className="flex items-center gap-2 bg-green-650 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition hover-lift cursor-pointer"
           >
             <PlusCircle size={16} />
             Report Hazard
           </button>
 
           <button
-            onClick={() => navigate("/report-fire")}
-            className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg"
+            onClick={() => navigate("/FireOutbreak")}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition hover-lift cursor-pointer"
           >
             <Flame size={16} />
             Fire Outbreak

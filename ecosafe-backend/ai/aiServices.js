@@ -185,34 +185,37 @@ function verifyReportAI(category, description = "", image = "", location = "") {
 
 /**
  * FEATURE 5: SMS Broadcast Engine
- * SimulatesTwilio / Africa's Talking dispatches and writes to sms_broadcasts logs.
+ * Simulates Twilio / Africa's Talking dispatches and writes to sms_broadcasts logs.
  */
-function broadcastSMSAI(incidentId, community, hazardType, severity, location, callback) {
+async function broadcastSMSAI(incidentId, community, hazardType, severity, location, callback) {
   const alertMsg = `🚨 ECOSAFE AI CRITICAL ALERT: ${hazardType} detected in ${community} (${location}). Risk Level: ${severity}. Avoid affected zones and stay alert.`;
   
   // Choose SMS provider simulation based on availability (defaults to Twilio mock)
   const provider = process.env.SMS_PROVIDER || "Twilio";
 
-  db.run(
-    "INSERT INTO sms_broadcasts (incident_id, community, message, status, provider) VALUES (?, ?, ?, 'SENT (SIMULATED)', ?)",
-    [incidentId, community, alertMsg, provider],
-    function (err) {
-      if (err) {
-        console.error("Failed to log SMS broadcast:", err);
-        if (callback) callback(err);
-      } else {
-        console.log(`[SMS BROADCAST via ${provider}] to residents of ${community}: "${alertMsg}"`);
-        if (callback) callback(null, { id: this.lastID, message: alertMsg, provider });
+  try {
+    const result = await db.smsBroadcast.create({
+      data: {
+        incident_id: incidentId,
+        community,
+        message: alertMsg,
+        status: "SENT (SIMULATED)",
+        provider
       }
-    }
-  );
+    });
+    console.log(`[SMS BROADCAST via ${provider}] to residents of ${community}: "${alertMsg}"`);
+    if (callback) callback(null, { id: result.id, message: alertMsg, provider });
+  } catch (err) {
+    console.error("Failed to log SMS broadcast:", err);
+    if (callback) callback(err);
+  }
 }
 
 /**
  * FEATURE 6: AI Environmental Chatbot
  * Returns conversational safety tips and guidance.
  */
-function handleChatbotQuery(query, callback) {
+async function handleChatbotQuery(query, callback) {
   const q = (query || "").toLowerCase();
   let reply = "";
 
@@ -226,145 +229,192 @@ function handleChatbotQuery(query, callback) {
     reply = "♻️ **Waste Management & Disposal Tips:**\n1. Never discard batteries, electronics, or medical packaging in domestic trash. Take them to designated e-waste recycling points.\n2. Separate organic compostable materials from recyclable plastics.\n3. Do not engage in open trash burning, as it releases toxic heavy metal fumes into the neighborhood.\n4. Log any illegal dumping site on EcoSafe to notify environmental officers.";
   } else if (q.includes("water pollution") || q.includes("dirty water")) {
     reply = "💧 **Water Contamination Safety advice:**\n1. Do not use local creek or well water for cooking, drinking, or washing if you notice an oily sheen or dead fish.\n2. Keep livestock away from contaminated water sources.\n3. Standard home boiling will NOT destroy chemical toxins or crude residues; use bottled water until verified clean.\n4. Report contaminated water bodies on the portal immediately.";
-  } else if (q.includes("logging") || q.includes("logging") || q.includes("cutting trees")) {
+  } else if (q.includes("logging") || q.includes("cutting trees")) {
     reply = "🌳 **Protecting Forest Cover:**\nIllegal tree cutting accelerates soil erosion and ruins the local ecosystem. Note down the location, take a picture, and report under the 'Illegal Logging' category to NESREA.";
   } else {
     reply = "👋 **Hello! I'm EcoSafe AI, your environmental protection assistant.**\n\nI can help you with:\n• Safety protocols for oil spills, gas leaks, and floods\n• Proper electronic and solid waste disposal guidelines\n• Advice on identifying water/air pollution hazards\n• Reporting instructions\n\nWhat environmental safety topic can I help you with today?";
   }
 
   // Record dialogue log
-  db.run(
-    "INSERT INTO chatbot_history (query, response) VALUES (?, ?)",
-    [query, reply],
-    (err) => {
-      if (err) console.error("Error logging chatbot query:", err);
-      callback(null, reply);
-    }
-  );
+  try {
+    await db.chatbotHistory.create({
+      data: {
+        query,
+        response: reply
+      }
+    });
+    if (callback) callback(null, reply);
+  } catch (err) {
+    console.error("Error logging chatbot query:", err);
+    if (callback) callback(null, reply);
+  }
 }
 
 /**
  * FEATURE 7: Community Risk Score Aggregation
  * Re-evaluates risk metrics for a community based on current database logs.
  */
-function updateCommunityRisk(community, callback) {
-  if (!community) return callback && callback(null);
+async function updateCommunityRisk(community, callback) {
+  if (!community) {
+    if (callback) callback(null);
+    return;
+  }
 
-  db.all(
-    "SELECT priority, status FROM reports WHERE location LIKE ? OR title LIKE ? OR description LIKE ?",
-    [`%${community}%`, `%${community}%`, `%${community}%`],
-    (err, rows) => {
-      if (err) return callback && callback(err);
-      
-      const total = rows.length;
-      if (total === 0) {
-        db.run(
-          "INSERT INTO community_risk (community, risk_score, status, total_incidents, resolved_incidents) VALUES (?, 10, 'Low Risk', 0, 0) ON CONFLICT(community) DO UPDATE SET risk_score=10, status='Low Risk', total_incidents=0, resolved_incidents=0",
-          [community],
-          (err) => callback && callback(err)
-        );
-        return;
+  try {
+    const rows = await db.report.findMany({
+      where: {
+        OR: [
+          { location: { contains: community, mode: "insensitive" } },
+          { title: { contains: community, mode: "insensitive" } },
+          { description: { contains: community, mode: "insensitive" } }
+        ]
+      },
+      select: {
+        priority: true,
+        status: true
       }
+    });
 
-      // Risk score math: Critical incidents weight 25, High weight 15, Medium 8, Low 3
-      let score = 0;
-      let resolvedCount = 0;
-      
-      rows.forEach(r => {
-        if (r.status === "Approved") resolvedCount++; // Count approved/resolved
-        
-        if (r.priority === "Critical") score += 25;
-        else if (r.priority === "High") score += 15;
-        else if (r.priority === "Medium") score += 8;
-        else score += 3;
-      });
-
-      // Deduct score offset based on resolved percentage (resolved reports lower the risk score!)
-      const resolveRate = resolvedCount / total;
-      score = Math.max(10, Math.min(100, Math.floor(score * (1 - resolveRate * 0.5))));
-
-      let status = "Low Risk";
-      if (score > 80) status = "Critical Risk";
-      else if (score > 60) status = "High Risk";
-      else if (score > 30) status = "Moderate Risk";
-
-      db.run(
-        `INSERT INTO community_risk (community, risk_score, status, total_incidents, resolved_incidents) 
-         VALUES (?, ?, ?, ?, ?) 
-         ON CONFLICT(community) DO UPDATE SET risk_score=excluded.risk_score, status=excluded.status, total_incidents=excluded.total_incidents, resolved_incidents=excluded.resolved_incidents`,
-        [community, score, status, total, resolvedCount],
-        (err) => {
-          if (err) console.error("Error saving community risk:", err);
-          if (callback) callback(err, { community, score, status });
+    const total = rows.length;
+    if (total === 0) {
+      const emptyRes = await db.communityRisk.upsert({
+        where: { community },
+        update: {
+          risk_score: 10,
+          status: "Low Risk",
+          total_incidents: 0,
+          resolved_incidents: 0
+        },
+        create: {
+          community,
+          risk_score: 10,
+          status: "Low Risk",
+          total_incidents: 0,
+          resolved_incidents: 0
         }
-      );
+      });
+      if (callback) callback(null, emptyRes);
+      return;
     }
-  );
+
+    // Risk score math: Critical incidents weight 25, High weight 15, Medium 8, Low 3
+    let score = 0;
+    let resolvedCount = 0;
+    
+    rows.forEach(r => {
+      if (r.status === "Approved") resolvedCount++; // Count approved/resolved
+      
+      if (r.priority === "Critical") score += 25;
+      else if (r.priority === "High") score += 15;
+      else if (r.priority === "Medium") score += 8;
+      else score += 3;
+    });
+
+    // Deduct score offset based on resolved percentage (resolved reports lower the risk score!)
+    const resolveRate = resolvedCount / total;
+    score = Math.max(10, Math.min(100, Math.floor(score * (1 - resolveRate * 0.5))));
+
+    let status = "Low Risk";
+    if (score > 80) status = "Critical Risk";
+    else if (score > 60) status = "High Risk";
+    else if (score > 30) status = "Moderate Risk";
+
+    const result = await db.communityRisk.upsert({
+      where: { community },
+      update: {
+        risk_score: score,
+        status,
+        total_incidents: total,
+        resolved_incidents: resolvedCount
+      },
+      create: {
+        community,
+        risk_score: score,
+        status,
+        total_incidents: total,
+        resolved_incidents: resolvedCount
+      }
+    });
+
+    if (callback) callback(null, result);
+  } catch (err) {
+    console.error("Error saving community risk:", err);
+    if (callback) callback(err);
+  }
 }
 
 /**
  * FEATURE 8: AI Recommendations Engine
  * Summarizes global statistics and triggers hazard prevention suggestions.
  */
-function getAIRecommendations(callback) {
-  db.all(
-    `SELECT category, location, COUNT(*) as count 
-     FROM reports 
-     WHERE status != 'Resolved' AND status != 'Rejected' 
-     GROUP BY category, location`,
-    [],
-    (err, rows) => {
-      if (err) return callback(err);
-
-      const recommendations = [];
-      const categoryCounts = {};
-
-      rows.forEach(r => {
-        categoryCounts[r.category] = (categoryCounts[r.category] || 0) + r.count;
-        
-        if (r.count >= 2) {
-          if (r.category === "Flooding" || r.category === "Drainage Blockage") {
-            recommendations.push({
-              title: `Clear drainage grids in ${r.location}`,
-              desc: `Increasing hazard indicators (${r.count} reports) suggest high flooding risks. Municipal grid clearing campaigns are strongly recommended.`,
-              priority: "High"
-            });
-          } else if (r.category === "Waste Dumping" || r.category === "Hazardous Waste") {
-            recommendations.push({
-              title: `Enforce waste control in ${r.location}`,
-              desc: `Frequent dump reports (${r.count} incidents) logged. Placement of security signs and sanitation enforcement teams required.`,
-              priority: "Medium"
-            });
-          } else if (r.category === "Oil Spill") {
-            recommendations.push({
-              title: `Pipeline pipeline integrity audit in ${r.location}`,
-              desc: `${r.count} active oil spill reports. Urge operators to conduct emergency pipeline inspections.`,
-              priority: "Critical"
-            });
-          }
+async function getAIRecommendations(callback) {
+  try {
+    const groups = await db.report.groupBy({
+      by: ['category', 'location'],
+      where: {
+        status: {
+          notIn: ['Resolved', 'Rejected']
         }
+      },
+      _count: {
+        _all: true
+      }
+    });
+
+    const recommendations = [];
+    const categoryCounts = {};
+
+    groups.forEach(g => {
+      const count = g._count._all;
+      const category = g.category;
+      const location = g.location;
+
+      categoryCounts[category] = (categoryCounts[category] || 0) + count;
+      
+      if (count >= 2) {
+        if (category === "Flooding" || category === "Drainage Blockage") {
+          recommendations.push({
+            title: `Clear drainage grids in ${location}`,
+            desc: `Increasing hazard indicators (${count} reports) suggest high flooding risks. Municipal grid clearing campaigns are strongly recommended.`,
+            priority: "High"
+          });
+        } else if (category === "Waste Dumping" || category === "Hazardous Waste") {
+          recommendations.push({
+            title: `Enforce waste control in ${location}`,
+            desc: `Frequent dump reports (${count} incidents) logged. Placement of security signs and sanitation enforcement teams required.`,
+            priority: "Medium"
+          });
+        } else if (category === "Oil Spill") {
+          recommendations.push({
+            title: `Pipeline integrity audit in ${location}`,
+            desc: `${count} active oil spill reports. Urge operators to conduct emergency pipeline inspections.`,
+            priority: "Critical"
+          });
+        }
+      }
+    });
+
+    // Global trends recommendation
+    if (categoryCounts["Air Pollution"] > 3) {
+      recommendations.push({
+        title: "Public Air Safety Campaign",
+        desc: "Regional smog and particulate matter index elevated. Advise masking and tree planting.",
+        priority: "Medium"
       });
-
-      // Global trends recommendation
-      if (categoryCounts["Air Pollution"] > 3) {
-        recommendations.push({
-          title: "Public Air Safety Campaign",
-          desc: "Regional smog and particulate matter index elevated. Advise masking and tree planting.",
-          priority: "Medium"
-        });
-      }
-
-      if (recommendations.length === 0) {
-        recommendations.push({
-          title: "Promote Environmental Stewardship",
-          desc: "Current environmental indexes are stable. Continue to monitor reporting feeds.",
-          priority: "Low"
-        });
-      }
-
-      callback(null, recommendations);
     }
-  );
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        title: "Promote Environmental Stewardship",
+        desc: "Current environmental indexes are stable. Continue to monitor reporting feeds.",
+        priority: "Low"
+      });
+    }
+
+    if (callback) callback(null, recommendations);
+  } catch (err) {
+    if (callback) callback(err);
+  }
 }
 
 module.exports = {

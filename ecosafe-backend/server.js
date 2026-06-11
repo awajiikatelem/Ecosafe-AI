@@ -18,7 +18,7 @@ const {
 } = require("./ai/aiServices");
 
 const app = express();
-const SECRET = "ecosafe-secret";
+const SECRET = process.env.JWT_SECRET || "ecosafe-secret";
 
 // Configure cors and JSON size limits
 app.use(cors());
@@ -36,53 +36,59 @@ function getBadge(points) {
   return "Planet Guardian 🌎";
 }
 
-function updateUserPointsAndBadge(userId, pointsToAdd, callback) {
+async function updateUserPointsAndBadge(userId, pointsToAdd, callback) {
   if (!userId) {
     if (callback) callback(null, null);
     return;
   }
-  db.get("SELECT points FROM users WHERE id = ?", [userId], (err, row) => {
-    if (err || !row) {
-      if (callback) callback(err || new Error("User not found"));
+  try {
+    const user = await db.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      if (callback) callback(new Error("User not found"));
       return;
     }
-    const currentPoints = row.points || 0;
+    const currentPoints = user.points || 0;
     const newPoints = currentPoints + pointsToAdd;
     const newBadge = getBadge(newPoints);
 
-    db.run(
-      "UPDATE users SET points = ?, badge = ? WHERE id = ?",
-      [newPoints, newBadge, userId],
-      (err) => {
-        if (err) {
-          if (callback) callback(err);
-        } else {
-          console.log(`User ${userId} awarded ${pointsToAdd} points. New total: ${newPoints} (${newBadge})`);
-          if (callback) callback(null, { points: newPoints, badge: newBadge });
-        }
+    const updatedUser = await db.user.update({
+      where: { id: userId },
+      data: {
+        points: newPoints,
+        badge: newBadge
       }
-    );
-  });
+    });
+
+    console.log(`User ${userId} awarded ${pointsToAdd} points. New total: ${newPoints} (${newBadge})`);
+    if (callback) callback(null, updatedUser);
+  } catch (err) {
+    if (callback) callback(err);
+  }
 }
 
 /* ================= SEED ADMIN USER ================= */
 const seedAdmin = async () => {
   const adminEmail = "admin@ecosafe.ng";
-  db.get("SELECT * FROM users WHERE email = ?", [adminEmail], async (err, row) => {
+  try {
+    const row = await db.user.findUnique({ where: { email: adminEmail } });
     if (!row) {
       const hash = await bcrypt.hash("admin323", 10);
-      db.run(
-        "INSERT INTO users (name, email, password, role, points, badge) VALUES (?, ?, ?, ?, ?, ?)",
-        ["NESREA Admin Officer", adminEmail, hash, "admin", 1000, "Planet Guardian 🌎"],
-        (err) => {
-          if (err) console.error("Error seeding admin user:", err);
-          else console.log("Seeded admin user: admin@ecosafe.ng / admin323");
+      await db.user.create({
+        data: {
+          name: "NESREA Admin Officer",
+          email: adminEmail,
+          password: hash,
+          role: "admin",
+          points: 1000,
+          badge: "Planet Guardian 🌎"
         }
-      );
+      });
+      console.log("Seeded admin user: admin@ecosafe.ng / admin323");
     }
-  });
+  } catch (err) {
+    console.error("Error seeding admin user:", err);
+  }
 };
-seedAdmin();
 
 /* ================= AUTHENTICATION ================= */
 
@@ -95,28 +101,32 @@ app.post("/register", async (req, res) => {
 
   try {
     const hash = await bcrypt.hash(password, 10);
-    db.run(
-      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'user')",
-      [name, email, hash],
-      (err) => {
-        if (err) return res.status(400).json({ error: "Email already exists" });
-        res.json({ message: "User created" });
+    await db.user.create({
+      data: {
+        name,
+        email,
+        password: hash,
+        role: "user"
       }
-    );
+    });
+    res.json({ message: "User created" });
   } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(400).json({ error: "Email already exists" });
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
 // Login
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Missing email/password" });
   }
 
-  db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const user = await db.user.findUnique({ where: { email } });
     if (!user) return res.status(400).json({ error: "User not found" });
 
     const valid = await bcrypt.compare(password, user.password);
@@ -124,34 +134,58 @@ app.post("/login", (req, res) => {
 
     const token = jwt.sign({ id: user.id, role: user.role }, SECRET);
     res.json({ token });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // User Profile Info
-app.get("/profile", verifyToken, (req, res) => {
-  db.get("SELECT id, name, email, role, points, badge FROM users WHERE id = ?", [req.user.id], (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/profile", verifyToken, async (req, res) => {
+  try {
+    const user = await db.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        points: true,
+        badge: true
+      }
+    });
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Leaderboard
-app.get("/leaderboard", (req, res) => {
-  db.all(
-    "SELECT name, points, badge FROM users WHERE role = 'user' ORDER BY points DESC, name ASC LIMIT 15",
-    [],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(rows || []);
-    }
-  );
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const rows = await db.user.findMany({
+      where: { role: "user" },
+      select: {
+        name: true,
+        points: true,
+        badge: true
+      },
+      orderBy: [
+        { points: "desc" },
+        { name: "asc" }
+      ],
+      take: 15
+    });
+    res.json(rows || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= REPORT SUBMISSIONS ================= */
 
 // Create standard hazard report
-app.post("/report", verifyToken, (req, res) => {
+app.post("/report", verifyToken, async (req, res) => {
   const {
     title,
     description,
@@ -166,87 +200,88 @@ app.post("/report", verifyToken, (req, res) => {
     return res.status(400).json({ error: "Missing required report details" });
   }
 
-  // AI Report Analysis and Prioritization
-  const aiAnalysis = analyzeAndPrioritizeAI(category, title, description, image, location);
-  
-  // AI Verification and Moderation
-  const aiVerify = verifyReportAI(category, description, image, location);
+  try {
+    // AI Report Analysis and Prioritization
+    const aiAnalysis = analyzeAndPrioritizeAI(category, title, description, image, location);
+    
+    // AI Verification and Moderation
+    const aiVerify = verifyReportAI(category, description, image, location);
 
-  const priority = aiAnalysis.priority || detectPriority(title + " " + description);
-  const aiTipsList = generateSafetyTips(category, title, description);
-  const aiTips = JSON.stringify(aiTipsList);
+    const priority = aiAnalysis.priority || detectPriority(title + " " + description);
+    const aiTipsList = generateSafetyTips(category, title, description);
+    const aiTips = JSON.stringify(aiTipsList);
 
-  // AI Evidence Verification (legacy compatibility compatibility)
-  const imageVerification = validateImageAI(category, image);
-  const aiImageValid = imageVerification.isValid;
-  const aiImageAnalysis = imageVerification.analysis;
+    // AI Evidence Verification (legacy compatibility)
+    const imageVerification = validateImageAI(category, image);
+    const aiImageValid = imageVerification.isValid;
+    const aiImageAnalysis = imageVerification.analysis;
 
-  db.run(
-    `INSERT INTO reports 
-    (user_id, title, description, category, location, latitude, longitude, priority, image, ai_tips, ai_image_valid, ai_image_analysis,
-     ai_hazard_type, ai_severity, ai_confidence, ai_risk_level, ai_recommendation, ai_assigned_agency, ai_verification_status, ai_verification_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      req.user.id,
-      title,
-      description,
-      category,
-      location,
-      latitude ? String(latitude) : null,
-      longitude ? String(longitude) : null,
-      priority,
-      image,
-      aiTips,
-      aiImageValid,
-      aiImageAnalysis,
-      aiAnalysis.hazardType,
-      aiAnalysis.severity,
-      aiAnalysis.confidence,
-      aiAnalysis.riskLevel,
-      aiAnalysis.recommendation,
-      aiAnalysis.assignedAgency,
-      aiVerify.status,
-      aiVerify.reason
-    ],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      const reportId = this.lastID;
-
-      // Update community risk statistics in the background
-      updateCommunityRisk(location, (riskErr) => {
-        if (riskErr) console.error("Error updating community risk:", riskErr);
-      });
-
-      // If critical/high severity or SMS alert required, dispatch automated alert
-      if (aiAnalysis.alertRequired || aiAnalysis.severity === "Critical" || aiAnalysis.severity === "High") {
-        broadcastSMSAI(reportId, location, aiAnalysis.hazardType, aiAnalysis.severity, location, (smsErr) => {
-          if (smsErr) console.error("Error broadcasting automated SMS:", smsErr);
-        });
+    const report = await db.report.create({
+      data: {
+        user_id: req.user.id,
+        title,
+        description,
+        category,
+        location,
+        latitude: latitude ? String(latitude) : null,
+        longitude: longitude ? String(longitude) : null,
+        priority,
+        image,
+        ai_tips: aiTips,
+        ai_image_valid: aiImageValid,
+        ai_image_analysis: aiImageAnalysis,
+        ai_hazard_type: aiAnalysis.hazardType,
+        ai_severity: aiAnalysis.severity,
+        ai_confidence: aiAnalysis.confidence,
+        ai_risk_level: aiAnalysis.riskLevel,
+        ai_recommendation: aiAnalysis.recommendation,
+        ai_assigned_agency: aiAnalysis.assignedAgency,
+        ai_verification_status: aiVerify.status,
+        ai_verification_reason: aiVerify.reason
       }
+    });
 
-      // Reward points: +10 base points, +5 if valid image evidence uploaded
-      const pointsToAward = aiImageValid === 1 ? 15 : 10;
-      updateUserPointsAndBadge(req.user.id, pointsToAward, (err, rewardInfo) => {
-        res.json({ 
-          message: "Report submitted", 
-          priority, 
-          aiTips: aiTipsList,
-          aiImageValid,
-          aiImageAnalysis,
-          pointsAwarded: pointsToAward,
-          newBalance: rewardInfo ? rewardInfo.points : 0,
-          ai_verification_status: aiVerify.status,
-          ai_verification_reason: aiVerify.reason
-        });
+    const reportId = report.id;
+
+    // Update community risk statistics in the background
+    updateCommunityRisk(location, (riskErr) => {
+      if (riskErr) console.error("Error updating community risk:", riskErr);
+    });
+
+    // If critical/high severity or SMS alert required, dispatch automated alert
+    if (aiAnalysis.alertRequired || aiAnalysis.severity === "Critical" || aiAnalysis.severity === "High") {
+      broadcastSMSAI(reportId, location, aiAnalysis.hazardType, aiAnalysis.severity, location, (smsErr) => {
+        if (smsErr) console.error("Error broadcasting automated SMS:", smsErr);
       });
     }
-  );
+
+    // Reward points: +10 base points, +5 if valid image evidence uploaded
+    const pointsToAward = aiImageValid === 1 ? 15 : 10;
+    updateUserPointsAndBadge(req.user.id, pointsToAward, (err, rewardInfo) => {
+      res.json({ 
+        message: "Report submitted", 
+        priority, 
+        aiTips: aiTipsList,
+        aiImageValid,
+        aiImageAnalysis,
+        pointsAwarded: pointsToAward,
+        newBalance: rewardInfo ? rewardInfo.points : 0,
+        ai_verification_status: aiVerify.status,
+        ai_verification_reason: aiVerify.reason
+      });
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Fetch my reports
-app.get("/myreports", verifyToken, (req, res) => {
-  db.all("SELECT * FROM reports WHERE user_id = ? ORDER BY created_at DESC", [req.user.id], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/myreports", verifyToken, async (req, res) => {
+  try {
+    const rows = await db.report.findMany({
+      where: { user_id: req.user.id },
+      orderBy: { created_at: "desc" }
+    });
     
     // Parse JSON string of ai_tips for frontend convenience
     const parsedRows = rows.map(row => {
@@ -259,22 +294,35 @@ app.get("/myreports", verifyToken, (req, res) => {
     });
 
     res.json(parsedRows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Delete report
-app.delete("/report/:id", verifyToken, (req, res) => {
-  db.run("DELETE FROM reports WHERE id = ? AND user_id = ?", [req.params.id, req.user.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(403).json({ error: "Unauthorized or not found" });
+app.delete("/report/:id", verifyToken, async (req, res) => {
+  try {
+    const reportId = req.params.id;
+    const result = await db.report.deleteMany({
+      where: {
+        id: reportId,
+        user_id: req.user.id
+      }
+    });
+    
+    if (result.count === 0) return res.status(403).json({ error: "Unauthorized or not found" });
     res.json({ message: "Report deleted successfully" });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Get all reports (Public - Map and Dashboard)
-app.get("/reports", (req, res) => {
-  db.all("SELECT * FROM reports ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/reports", async (req, res) => {
+  try {
+    const rows = await db.report.findMany({
+      orderBy: { created_at: "desc" }
+    });
     
     const parsedRows = rows.map(row => {
       try {
@@ -285,13 +333,17 @@ app.get("/reports", (req, res) => {
       return row;
     });
     res.json(parsedRows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Alias for dashboard GET /report
-app.get("/report", (req, res) => {
-  db.all("SELECT * FROM reports ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/report", async (req, res) => {
+  try {
+    const rows = await db.report.findMany({
+      orderBy: { created_at: "desc" }
+    });
     
     const parsedRows = rows.map(row => {
       try {
@@ -302,13 +354,17 @@ app.get("/report", (req, res) => {
       return row;
     });
     res.json(parsedRows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Alias for Map (all-reports)
-app.get("/all-reports", (req, res) => {
-  db.all("SELECT * FROM reports ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/all-reports", async (req, res) => {
+  try {
+    const rows = await db.report.findMany({
+      orderBy: { created_at: "desc" }
+    });
     
     const parsedRows = rows.map(row => {
       try {
@@ -319,11 +375,13 @@ app.get("/all-reports", (req, res) => {
       return row;
     });
     res.json(parsedRows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Fire Outbreak Multi-Part Form Endpoint
-app.post("/api/FireOutbreak", upload.single("image"), (req, res) => {
+app.post("/api/FireOutbreak", upload.single("image"), async (req, res) => {
   const { fullname, phone, location, description } = req.body;
 
   if (!fullname || !phone || !location || !description) {
@@ -341,98 +399,94 @@ app.post("/api/FireOutbreak", upload.single("image"), (req, res) => {
   const title = `🚨 Fire outbreak reported by ${fullname}`;
   const descWithContact = `${description} [Reporter contact: ${phone}]`;
 
-  // AI Analysis and Verification
-  const aiAnalysis = analyzeAndPrioritizeAI(category, title, descWithContact, imageBase64, location);
-  const aiVerify = verifyReportAI(category, descWithContact, imageBase64, location);
+  try {
+    // AI Analysis and Verification
+    const aiAnalysis = analyzeAndPrioritizeAI(category, title, descWithContact, imageBase64, location);
+    const aiVerify = verifyReportAI(category, descWithContact, imageBase64, location);
 
-  const aiTipsList = generateSafetyTips(category, title, descWithContact);
-  const aiTips = JSON.stringify(aiTipsList);
+    const aiTipsList = generateSafetyTips(category, title, descWithContact);
+    const aiTips = JSON.stringify(aiTipsList);
 
-  // Image verification
-  const imageVerification = validateImageAI(category, imageBase64);
-  const aiImageValid = imageVerification.isValid;
-  const aiImageAnalysis = imageVerification.analysis;
+    // Image verification
+    const imageVerification = validateImageAI(category, imageBase64);
+    const aiImageValid = imageVerification.isValid;
+    const aiImageAnalysis = imageVerification.analysis;
 
-  // Extract optional Authorization token to reward users
-  let userId = null;
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    const token = authHeader.split(" ")[1];
-    try {
-      const decoded = jwt.verify(token, SECRET);
-      userId = decoded.id;
-    } catch (e) {
-      console.log("Guest fire outbreak report (invalid or missing auth token)");
-    }
-  }
-
-  db.run(
-    `INSERT INTO reports 
-    (user_id, title, description, category, location, priority, image, ai_tips, ai_image_valid, ai_image_analysis,
-     ai_hazard_type, ai_severity, ai_confidence, ai_risk_level, ai_recommendation, ai_assigned_agency, ai_verification_status, ai_verification_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      userId,
-      title,
-      descWithContact,
-      category,
-      location,
-      priority,
-      imageBase64,
-      aiTips,
-      aiImageValid,
-      aiImageAnalysis,
-      aiAnalysis.hazardType,
-      aiAnalysis.severity,
-      aiAnalysis.confidence,
-      aiAnalysis.riskLevel,
-      aiAnalysis.recommendation,
-      aiAnalysis.assignedAgency,
-      aiVerify.status,
-      aiVerify.reason
-    ],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      const reportId = this.lastID;
-
-      // Update community risk statistics in the background
-      updateCommunityRisk(location, (riskErr) => {
-        if (riskErr) console.error("Error updating community risk:", riskErr);
-      });
-
-      // Automatically create a public alert for fire outbreaks
-      db.run(
-        "INSERT INTO alerts (title, message, level, target) VALUES (?, ?, 'Critical', 'All Residents')",
-        [
-          `🚨 IMMEDIATE FIRE ALERT: ${location}`,
-          `A critical fire outbreak has been reported at ${location}. Description: ${description}. Evacuate the area immediately and steer clear.`
-        ],
-        (alertErr) => {
-          if (alertErr) console.error("Error broadcasting automated fire alert:", alertErr);
-        }
-      );
-
-      // Trigger SMS dispatch for the fire outbreak
-      broadcastSMSAI(reportId, location, category, "Critical", location, (smsErr) => {
-        if (smsErr) console.error("Error broadcasting automated SMS for fire outbreak:", smsErr);
-      });
-
-      // Reward points if user was logged in (+15 points)
-      if (userId) {
-        updateUserPointsAndBadge(userId, 15, () => {
-          res.json({ message: "Fire report submitted, public alerts broadcasted.", priority, pointsAwarded: 15 });
-        });
-      } else {
-        res.json({ message: "Fire report submitted successfully as guest.", priority });
+    // Extract optional Authorization token to reward users
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.split(" ")[1];
+      try {
+        const decoded = jwt.verify(token, SECRET);
+        userId = decoded.id;
+      } catch (e) {
+        console.log("Guest fire outbreak report (invalid or missing auth token)");
       }
     }
-  );
+
+    const report = await db.report.create({
+      data: {
+        user_id: userId,
+        title,
+        description: descWithContact,
+        category,
+        location,
+        priority,
+        image: imageBase64,
+        ai_tips: aiTips,
+        ai_image_valid: aiImageValid,
+        ai_image_analysis: aiImageAnalysis,
+        ai_hazard_type: aiAnalysis.hazardType,
+        ai_severity: aiAnalysis.severity,
+        ai_confidence: aiAnalysis.confidence,
+        ai_risk_level: aiAnalysis.riskLevel,
+        ai_recommendation: aiAnalysis.recommendation,
+        ai_assigned_agency: aiAnalysis.assignedAgency,
+        ai_verification_status: aiVerify.status,
+        ai_verification_reason: aiVerify.reason
+      }
+    });
+
+    const reportId = report.id;
+
+    // Update community risk statistics in the background
+    updateCommunityRisk(location, (riskErr) => {
+      if (riskErr) console.error("Error updating community risk:", riskErr);
+    });
+
+    // Automatically create a public alert for fire outbreaks
+    await db.alert.create({
+      data: {
+        title: `🚨 IMMEDIATE FIRE ALERT: ${location}`,
+        message: `A critical fire outbreak has been reported at ${location}. Description: ${description}. Evacuate the area immediately and steer clear.`,
+        level: "Critical",
+        target: "All Residents"
+      }
+    });
+
+    // Trigger SMS dispatch for the fire outbreak
+    broadcastSMSAI(reportId, location, category, "Critical", location, (smsErr) => {
+      if (smsErr) console.error("Error broadcasting automated SMS for fire outbreak:", smsErr);
+    });
+
+    // Reward points if user was logged in (+15 points)
+    if (userId) {
+      updateUserPointsAndBadge(userId, 15, () => {
+        res.json({ message: "Fire report submitted, public alerts broadcasted.", priority, pointsAwarded: 15 });
+      });
+    } else {
+      res.json({ message: "Fire report submitted successfully as guest.", priority });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= ADMIN INTERFACES ================= */
 
 // Admin Login
-app.post("/admin/login", (req, res) => {
+app.post("/admin/login", async (req, res) => {
   const { organization, email, password, accessCode } = req.body;
 
   if (!organization || !email || !password || !accessCode) {
@@ -443,8 +497,8 @@ app.post("/admin/login", (req, res) => {
     return res.status(403).json({ error: "Invalid Admin Access Code" });
   }
 
-  db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const user = await db.user.findUnique({ where: { email } });
     if (!user) return res.status(400).json({ error: "Account not found" });
 
     const valid = await bcrypt.compare(password, user.password);
@@ -456,123 +510,136 @@ app.post("/admin/login", (req, res) => {
 
     const token = jwt.sign({ id: user.id, role: user.role, organization }, SECRET);
     res.json({ token });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin get all reports
-app.get("/admin/reports", verifyToken, (req, res) => {
+app.get("/admin/reports", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
 
-  db.all("SELECT * FROM reports ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const rows = await db.report.findMany({
+      orderBy: { created_at: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin stats
-app.get("/admin/stats", verifyToken, (req, res) => {
+app.get("/admin/stats", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
 
-  db.get(
-    `
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending,
-      SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) as resolved,
-      SUM(CASE WHEN priority='Critical' THEN 1 ELSE 0 END) as critical
-    FROM reports
-    `,
-    [],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({
-        total: row.total || 0,
-        pending: row.pending || 0,
-        resolved: row.resolved || 0,
-        critical: row.critical || 0
-      });
-    }
-  );
+  try {
+    const total = await db.report.count();
+    const pending = await db.report.count({ where: { status: "Pending" } });
+    const resolved = await db.report.count({ where: { status: "Approved" } });
+    const critical = await db.report.count({ where: { priority: "Critical" } });
+
+    res.json({ total, pending, resolved, critical });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Legacy Endpoint for status updates (updates report by any user/admin)
-app.put("/report/:id", verifyToken, (req, res) => {
+// Legacy Endpoint for status updates
+app.put("/report/:id", verifyToken, async (req, res) => {
   const { status } = req.body;
-
-  db.run("UPDATE reports SET status = ? WHERE id = ?", [status, req.params.id], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const reportId = req.params.id;
+    await db.report.update({
+      where: { id: reportId },
+      data: { status }
+    });
     res.json({ message: "Updated" });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin update report status (and award points to reporter)
-app.put("/admin/report/:id", verifyToken, (req, res) => {
+app.put("/admin/report/:id", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
   const { status } = req.body;
+  const reportId = req.params.id;
 
-  db.get("SELECT user_id, status FROM reports WHERE id = ?", [req.params.id], (err, report) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const report = await db.report.findUnique({
+      where: { id: reportId }
+    });
     if (!report) return res.status(404).json({ error: "Report not found" });
 
-    db.run(
-      "UPDATE reports SET status = ? WHERE id = ?",
-      [status, req.params.id],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
+    await db.report.update({
+      where: { id: reportId },
+      data: { status }
+    });
 
-        // Recalculate community risk in background
-        db.get("SELECT location FROM reports WHERE id = ?", [req.params.id], (err, repInfo) => {
-          if (repInfo && repInfo.location) {
-            updateCommunityRisk(repInfo.location, (riskErr) => {
-              if (riskErr) console.error("Error updating community risk on admin status change:", riskErr);
-            });
-          }
-        });
+    // Recalculate community risk in background
+    if (report.location) {
+      updateCommunityRisk(report.location, (riskErr) => {
+        if (riskErr) console.error("Error updating community risk on admin status change:", riskErr);
+      });
+    }
 
-        // If the report is newly approved, reward the reporter!
-        if (status === "Approved" && report.status !== "Approved" && report.user_id) {
-          updateUserPointsAndBadge(report.user_id, 50, (err) => {
-            if (err) console.error("Error awarding points to reporter:", err);
-            res.json({ message: "Report approved, reporter rewarded 50 points." });
-          });
-        } else {
-          res.json({ message: "Report status updated to: " + status });
-        }
-      }
-    );
-  });
+    // If the report is newly approved, reward the reporter!
+    if (status === "Approved" && report.status !== "Approved" && report.user_id) {
+      updateUserPointsAndBadge(report.user_id, 50, (err) => {
+        if (err) console.error("Error awarding points to reporter:", err);
+        res.json({ message: "Report approved, reporter rewarded 50 points." });
+      });
+    } else {
+      res.json({ message: "Report status updated to: " + status });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= ALERTS SYSTEMS ================= */
 
 // Legacy Get alerts
-app.get("/alerts", (req, res) => {
-  db.all("SELECT * FROM alerts ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/alerts", async (req, res) => {
+  try {
+    const rows = await db.alert.findMany({
+      orderBy: { created_at: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Public Alerts feed
-app.get("/public/alerts", (req, res) => {
-  db.all("SELECT * FROM alerts ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/public/alerts", async (req, res) => {
+  try {
+    const rows = await db.alert.findMany({
+      orderBy: { created_at: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin Alerts get
-app.get("/admin/alerts", verifyToken, (req, res) => {
+app.get("/admin/alerts", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
 
-  db.all("SELECT * FROM alerts ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const rows = await db.alert.findMany({
+      orderBy: { created_at: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin Alerts broadcast create
-app.post("/admin/alerts", verifyToken, (req, res) => {
+app.post("/admin/alerts", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
   const { title, message, level, target } = req.body;
 
@@ -580,14 +647,19 @@ app.post("/admin/alerts", verifyToken, (req, res) => {
     return res.status(400).json({ error: "Title and message are required" });
   }
 
-  db.run(
-    "INSERT INTO alerts (title, message, level, target) VALUES (?, ?, ?, ?)",
-    [title, message, level || "Medium", target || "All Residents"],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: "Alert broadcasted successfully", id: this.lastID });
-    }
-  );
+  try {
+    const newAlert = await db.alert.create({
+      data: {
+        title,
+        message,
+        level: level || "Medium",
+        target: target || "All Residents"
+      }
+    });
+    res.json({ message: "Alert broadcasted successfully", id: newAlert.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= AI LAYER API ROUTES ================= */
@@ -604,15 +676,19 @@ app.post("/chatbot", (req, res) => {
 });
 
 // GET /community-risks: retrieve calculated community safety risks
-app.get("/community-risks", (req, res) => {
-  db.all("SELECT * FROM community_risk ORDER BY risk_score DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+app.get("/community-risks", async (req, res) => {
+  try {
+    const rows = await db.communityRisk.findMany({
+      orderBy: { risk_score: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /admin/broadcast-sms: broadcast SMS to users/communities using simulated or direct Twilio configurations
-app.post("/admin/broadcast-sms", verifyToken, (req, res) => {
+app.post("/admin/broadcast-sms", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
   const { community, hazardType, severity, message } = req.body;
 
@@ -620,16 +696,22 @@ app.post("/admin/broadcast-sms", verifyToken, (req, res) => {
     return res.status(400).json({ error: "Missing community or message content" });
   }
 
-  const provider = process.env.SMS_PROVIDER || "Twilio";
-  db.run(
-    "INSERT INTO sms_broadcasts (incident_id, community, message, status, provider) VALUES (?, ?, ?, 'SENT (ADMIN BROADCAST)', ?)",
-    [null, community, message, provider],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      console.log(`[ADMIN SMS BROADCAST via ${provider}] to residents of ${community}: "${message}"`);
-      res.json({ message: "SMS broadcast sent successfully", id: this.lastID, provider });
-    }
-  );
+  try {
+    const provider = process.env.SMS_PROVIDER || "Twilio";
+    const broadcast = await db.smsBroadcast.create({
+      data: {
+        incident_id: null,
+        community,
+        message,
+        status: "SENT (ADMIN BROADCAST)",
+        provider
+      }
+    });
+    console.log(`[ADMIN SMS BROADCAST via ${provider}] to residents of ${community}: "${message}"`);
+    res.json({ message: "SMS broadcast sent successfully", id: broadcast.id, provider });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /admin/ai-recommendations: fetch auto-generated hazard remediation lists
@@ -643,16 +725,22 @@ app.get("/admin/ai-recommendations", verifyToken, (req, res) => {
 });
 
 // GET /admin/sms-logs: display all sent SMS logs
-app.get("/admin/sms-logs", verifyToken, (req, res) => {
+app.get("/admin/sms-logs", verifyToken, async (req, res) => {
   if (req.user.role !== "admin") return res.status(403).json({ error: "Forbidden" });
 
-  db.all("SELECT * FROM sms_broadcasts ORDER BY created_at DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const rows = await db.smsBroadcast.findMany({
+      orderBy: { created_at: "desc" }
+    });
     res.json(rows || []);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= SERVER START ================= */
-app.listen(5000, () => {
-  console.log("🚀 EcoSafe backend running on http://localhost:5000");
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 EcoSafe backend running on http://localhost:${PORT}`);
+  seedAdmin();
 });

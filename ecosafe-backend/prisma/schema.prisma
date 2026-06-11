@@ -1,0 +1,96 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  name            String?
+  email           String           @unique
+  password        String
+  role            String           @default("user")
+  points          Int              @default(0)
+  badge           String           @default("Eco Novice")
+  reports         Report[]
+  chatbot_history ChatbotHistory[]
+
+  @@map("users")
+}
+
+model Report {
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id                String?  @db.ObjectId
+  user                   User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title                  String
+  description            String
+  category               String
+  location               String
+  priority               String
+  latitude               String?
+  longitude              String?
+  image                  String?
+  status                 String   @default("Pending")
+  ai_tips                String?
+  ai_image_valid         Int?     @default(-1)
+  ai_image_analysis      String?
+  ai_hazard_type         String?
+  ai_severity            String?
+  ai_confidence          Int?
+  ai_risk_level          String?
+  ai_recommendation      String?
+  ai_assigned_agency     String?
+  ai_verification_status String?  @default("PENDING REVIEW")
+  ai_verification_reason String?
+  created_at             DateTime @default(now())
+
+  @@map("reports")
+}
+
+model Alert {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  title      String
+  message    String
+  level      String?
+  target     String?
+  created_at DateTime @default(now())
+
+  @@map("alerts")
+}
+
+model CommunityRisk {
+  id                 String @id @default(auto()) @map("_id") @db.ObjectId
+  community          String @unique
+  risk_score         Int    @default(10)
+  status             String @default("Low Risk")
+  total_incidents    Int    @default(0)
+  resolved_incidents Int    @default(0)
+
+  @@map("community_risk")
+}
+
+model SmsBroadcast {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  incident_id String?  @db.ObjectId
+  community   String?
+  message     String
+  status      String?
+  provider    String?
+  created_at  DateTime @default(now())
+
+  @@map("sms_broadcasts")
+}
+
+model ChatbotHistory {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id    String?  @db.ObjectId
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  query      String
+  response   String
+  created_at DateTime @default(now())
+
+  @@map("chatbot_history")
+}

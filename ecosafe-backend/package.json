@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,13 +13,16 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@prisma/client": "^5.12.1",
     "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.1.1",
-    "sqlite3": "^6.0.1"
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.12.1"
   }
 }

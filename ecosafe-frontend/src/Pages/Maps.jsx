@@ -16,7 +16,7 @@ import {
 import MarkerClusterGroup from "react-leaflet-cluster";
 
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 import L from "leaflet";
 
@@ -62,8 +62,11 @@ export default function AdvancedMap() {
   const [search, setSearch] = useState("");
   const [userLocation, setUserLocation] = useState(null);
 
-  /* USER LOCATION */
-  useEffect(() => {
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation([
@@ -72,9 +75,16 @@ export default function AdvancedMap() {
         ]);
       },
       (err) => {
-        console.log(err);
-      }
+        console.error(err);
+        alert("Unable to retrieve your location. Please check your location permissions.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  /* USER LOCATION ON LOAD */
+  useEffect(() => {
+    handleDetectLocation();
   }, []);
 
   /* FETCH REPORTS */
@@ -192,11 +202,9 @@ export default function AdvancedMap() {
 
         {/* LOCATION BUTTON */}
         <button
-          onClick={() =>
-            userLocation &&
-            setUserLocation([...userLocation])
-          }
-          className="absolute top-4 right-4 z-1000 bg-white p-3 rounded-xl shadow-lg"
+          onClick={handleDetectLocation}
+          className="absolute top-4 right-4 z-1000 bg-white p-3 rounded-xl shadow-lg hover:bg-gray-100 transition duration-200"
+          title="Detect My Location"
         >
           <Locate size={18} />
         </button>
@@ -231,7 +239,7 @@ export default function AdvancedMap() {
           <MarkerClusterGroup>
 
             {filteredReports.map((r) => (
-              <div key={r.id}>
+              <React.Fragment key={r.id}>
 
                 {/* DANGER ZONE */}
                 <Circle
@@ -331,7 +339,7 @@ export default function AdvancedMap() {
                     </div>
                   </Popup>
                 </Marker>
-              </div>
+              </React.Fragment>
             ))}
           </MarkerClusterGroup>
         </MapContainer>
