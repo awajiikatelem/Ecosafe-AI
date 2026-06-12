@@ -154,7 +154,7 @@ export default function ReportHazard() {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("https://ecosafe-ai-2.onrender.com/report", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

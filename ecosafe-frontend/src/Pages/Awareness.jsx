@@ -34,7 +34,7 @@ export default function Community() {
       setLoading(true);
       try {
         // Fetch Leaderboard
-        const lbRes = await fetch("https://ecosafe-ai-2.onrender.com/leaderboard");
+        const lbRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/leaderboard`);
         if (lbRes.ok) {
           const lbData = await lbRes.json();
           setLeaderboard(lbData);
@@ -43,7 +43,7 @@ export default function Community() {
         // Fetch User Profile if logged in
         const token = localStorage.getItem("token");
         if (token) {
-          const profRes = await fetch("https://ecosafe-ai-2.onrender.com/profile", {
+          const profRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/profile`, {
             headers: {
               Authorization: `Bearer ${token}`
             }

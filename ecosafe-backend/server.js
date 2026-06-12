@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 
 const db = require("./db");
-const verifyToken = require("./middleware/verifyToken");
+const verifyToken = require("./Middleware/verifyToken");
 const { generateSafetyTips, validateImageAI } = require("./ai/aiHelper");
 const detectPriority = require("./ai/detectPriority");
 const {
@@ -19,11 +19,6 @@ const {
 
 const app = express();
 const SECRET = process.env.JWT_SECRET || "ecosafe-secret";
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 EcoSafe backend running on http://localhost:${PORT}`)
-}); 
 
 // Configure cors and JSON size limits
 app.use(cors());

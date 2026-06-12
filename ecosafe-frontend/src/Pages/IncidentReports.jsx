@@ -31,7 +31,7 @@ export default function IncidentReports() {
     try {
       setLoading(true);
 
-      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/reports", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/reports`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -51,7 +51,7 @@ export default function IncidentReports() {
 
   const updateStatus = async (id, status) => {
     try {
-      await fetch(`https://ecosafe-ai-2.onrender.com/admin/report/${id}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

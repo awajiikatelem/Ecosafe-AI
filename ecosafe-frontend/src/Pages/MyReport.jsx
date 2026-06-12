@@ -24,7 +24,7 @@ export default function MyReports() {
       try {
         const token = localStorage.getItem("token");
 
-        const res = await fetch("https://ecosafe-ai-2.onrender.com/myreports", {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/myreports`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -43,7 +43,7 @@ export default function MyReports() {
     try {
       const token = localStorage.getItem("token");
 
-      await fetch(`https://ecosafe-ai-2.onrender.com/report/${deleteId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/${deleteId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

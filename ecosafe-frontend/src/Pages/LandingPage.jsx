@@ -12,7 +12,7 @@ import BackToTop from "../Components/BackToTop";
 
 export default function Landing() {
   return (
-    <div pt-20>
+    <div className="pt-20">
       <Navbar />
       <Hero />
       <Story />

@@ -47,7 +47,7 @@ export default function ReportFire() {
     }
 
     try {
-      await fetch("https://ecosafe-ai-2.onrender.com/api/FireOutbreak", {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/FireOutbreak`, {
         method: "POST",
         headers,
         body: data,

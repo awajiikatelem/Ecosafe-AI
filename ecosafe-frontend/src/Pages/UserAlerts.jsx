@@ -20,7 +20,7 @@ export default function UserAlerts() {
   const fetchAlerts = async () => {
     try {
       const res = await fetch(
-        "https://ecosafe-ai-2.onrender.com/public/alerts"
+        `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/public/alerts`
       );
 
       const data = await res.json();

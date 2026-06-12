@@ -30,7 +30,7 @@ export default function AlertBroadcast() {
     try {
       const token = localStorage.getItem("adminToken");
 
-      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/alerts", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/alerts`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -77,7 +77,7 @@ export default function AlertBroadcast() {
         aiLevel = "Critical";
       }
 
-      const res = await fetch("https://ecosafe-ai-2.onrender.com/admin/alerts", {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/alerts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

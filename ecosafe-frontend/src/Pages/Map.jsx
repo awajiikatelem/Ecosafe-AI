@@ -92,7 +92,7 @@ export default function AdvancedMap() {
     const loadReports = async () => {
       try {
         const res = await fetch(
-          "https://ecosafe-ai-2.onrender.com/all-reports"
+          `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/all-reports`
         );
 
         const data = await res.json();
