@@ -33,7 +33,7 @@ export const submitReport = async (data, token) => {
 };
 
 export const getMyReports = async (token) => {
-  const res = await fetch(`${BASE_URL}/my-reports`, {
+  const res = await fetch(`${BASE_URL}/myreports`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
