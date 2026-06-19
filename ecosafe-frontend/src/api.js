@@ -122,3 +122,16 @@ export const getAIRecommendations = async (token) => {
   });
   return res.json();
 };
+
+/* ================= AI BROADCAST GENERATION ================= */
+export const aiGenerateBroadcast = async (data, token) => {
+  const res = await fetch(`${BASE_URL}/admin/ai-generate-broadcast`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+};

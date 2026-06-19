@@ -2,6 +2,8 @@ import {
   ArrowLeft,
   Locate,
   ShieldAlert,
+  Layers,
+  Flame,
 } from "lucide-react";
 
 import {
@@ -17,6 +19,7 @@ import MarkerClusterGroup from "react-leaflet-cluster";
 
 import { useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
+import io from "socket.io-client";
 
 import L from "leaflet";
 
@@ -61,6 +64,7 @@ export default function AdvancedMap() {
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [userLocation, setUserLocation] = useState(null);
+  const [heatmapMode, setHeatmapMode] = useState(false);
 
   const handleDetectLocation = () => {
     if (!navigator.geolocation) {
@@ -87,23 +91,41 @@ export default function AdvancedMap() {
     handleDetectLocation();
   }, []);
 
-  /* FETCH REPORTS */
+  /* FETCH REPORTS & INITIALIZE SOCKETS */
   useEffect(() => {
     const loadReports = async () => {
       try {
         const res = await fetch(
           `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/all-reports`
         );
-
         const data = await res.json();
-
         setReports(data);
       } catch (err) {
-        console.log(err);
+        console.log("Error loading reports:", err);
       }
     };
 
     loadReports();
+
+    // Connect socket
+    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+
+    socket.on("new-report", (newReport) => {
+      setReports((prev) => {
+        if (prev.some((r) => r.id === newReport.id)) return prev;
+        return [newReport, ...prev];
+      });
+    });
+
+    socket.on("report-updated", (updatedReport) => {
+      setReports((prev) =>
+        prev.map((r) => (r.id === updatedReport.id ? updatedReport : r))
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   /* FILTER REPORTS */
@@ -160,25 +182,36 @@ export default function AdvancedMap() {
         </div>
 
         {/* FILTERS */}
-        <div className="flex gap-3 flex-wrap">
-
+        <div className="flex gap-3 flex-wrap items-center">
           <input
             type="text"
             placeholder="Search incident..."
-            className="px-4 py-2 rounded-xl bg-white shadow text-sm outline-none"
+            className="px-4 py-2 rounded-xl bg-white shadow text-sm outline-none border border-gray-100 focus:ring-2 focus:ring-green-500/20"
             onChange={(e) => setSearch(e.target.value)}
           />
 
           <select
-            className="px-4 py-2 rounded-xl bg-white shadow text-sm outline-none"
+            className="px-4 py-2 rounded-xl bg-white shadow text-sm outline-none border border-gray-100 focus:ring-2 focus:ring-green-500/20 text-gray-700"
             onChange={(e) => setFilter(e.target.value)}
           >
-            <option>All</option>
-            <option>Critical</option>
-            <option>High</option>
-            <option>Medium</option>
-            <option>Low</option>
+            <option value="All">All Severity</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
           </select>
+
+          <button
+            onClick={() => setHeatmapMode(!heatmapMode)}
+            className={`px-4 py-2 rounded-xl shadow text-sm font-bold transition flex items-center gap-2 ${
+              heatmapMode 
+                ? "bg-gradient-to-r from-orange-500 to-red-500 text-white" 
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-100"
+            }`}
+          >
+            <Layers size={14} className={heatmapMode ? "animate-bounce" : ""} />
+            {heatmapMode ? "Disable Heatmap" : "Enable Heatmap"}
+          </button>
         </div>
       </div>
 
@@ -238,58 +271,43 @@ export default function AdvancedMap() {
           {/* CLUSTER */}
           <MarkerClusterGroup>
 
-            {filteredReports.map((r) => (
-              <React.Fragment key={r.id}>
-
-                {/* DANGER ZONE */}
-                <Circle
-                  center={[r.latitude, r.longitude]}
-                  radius={
-                    r.priority === "Critical"
-                      ? 1000
-                      : r.priority === "High"
-                      ? 700
-                      : 400
-                  }
-                  pathOptions={{
-                    color: getDangerColor(r.priority),
-                    fillColor: getDangerColor(r.priority),
-                    fillOpacity: 0.15,
-                  }}
-                />
-
-                {/* MARKER */}
-                <Marker
-                  position={[r.latitude, r.longitude]}
-                  icon={getMarkerIcon(r.priority)}
-                >
+            {filteredReports.map((r) => {
+              const popupContent = (
                   <Popup>
                     <div className="w-64">
-
                       <h2 className="font-bold text-lg mb-2">
                         {r.title}
                       </h2>
 
                       <div className="space-y-2 text-sm">
-
                         <p>
-                          <strong>Category:</strong>{" "}
-                          {r.category}
+                          <strong>Category:</strong> {r.category}
                         </p>
-
                         <p>
-                          <strong>Location:</strong>{" "}
-                          {r.location}
+                          <strong>Location:</strong> {r.location}
                         </p>
-
                         <p>
-                          <strong>Priority:</strong>{" "}
-                          {r.priority}
+                          <strong>Priority:</strong> {r.priority}
                         </p>
-
                         <p>
-                          <strong>Description:</strong>{" "}
-                          {r.description}
+                          <strong>Status:</strong>{" "}
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            r.status === "Resolved" ? "bg-green-100 text-green-800" :
+                            r.status === "Approved" ? "bg-blue-100 text-blue-800" :
+                            r.status === "Rejected" ? "bg-red-100 text-red-800" :
+                            "bg-yellow-100 text-yellow-800"
+                          }`}>
+                            {r.status || "Pending"}
+                          </span>
+                        </p>
+                        <p>
+                          <strong>Date:</strong>{" "}
+                          {new Date(r.created_at || Date.now()).toLocaleDateString(undefined, {
+                            year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                        <p>
+                          <strong>Description:</strong> {r.description}
                         </p>
 
                         {/* AI ANALYSIS */}
@@ -318,11 +336,8 @@ export default function AdvancedMap() {
 
                         {/* ACTIONS */}
                         <div className="flex gap-2 mt-4">
-
                           <button
-                            onClick={() =>
-                              navigate("/alerts")
-                            }
+                            onClick={() => navigate("/alerts")}
                             className="bg-red-600 text-white px-3 py-2 rounded-lg text-xs"
                           >
                             Emergency Alerts
@@ -338,9 +353,42 @@ export default function AdvancedMap() {
                       </div>
                     </div>
                   </Popup>
-                </Marker>
-              </React.Fragment>
-            ))}
+              );
+
+              return (
+                <React.Fragment key={r.id}>
+                  {/* DANGER ZONE / HEATMAP OVERLAY */}
+                  <Circle
+                    center={[r.latitude, r.longitude]}
+                    radius={
+                      r.priority === "Critical"
+                        ? 1000
+                        : r.priority === "High"
+                        ? 700
+                        : 400
+                    }
+                    pathOptions={{
+                      color: heatmapMode ? "transparent" : getDangerColor(r.priority),
+                      fillColor: getDangerColor(r.priority),
+                      fillOpacity: heatmapMode ? 0.6 : 0.15,
+                    }}
+                  >
+                    {/* Attach popup to circle when heatmap mode is active */}
+                    {heatmapMode && popupContent}
+                  </Circle>
+
+                  {/* STANDARD MARKER */}
+                  {!heatmapMode && (
+                    <Marker
+                      position={[r.latitude, r.longitude]}
+                      icon={getMarkerIcon(r.priority)}
+                    >
+                      {popupContent}
+                    </Marker>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </MarkerClusterGroup>
         </MapContainer>
       </div>

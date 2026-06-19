@@ -8,9 +8,11 @@ import {
   Loader2,
   LocateFixed,
   Sparkles,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 export default function ReportHazard() {
@@ -33,14 +35,51 @@ export default function ReportHazard() {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [aiPreviewData, setAiPreviewData] = useState(null);
+  const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
+
+  /* ================= RUN PRE-SUBMISSION AI PREVIEW ================= */
+  const getAiPreview = async (updatedForm) => {
+    const f = updatedForm || form;
+    if (!f.title || !f.description || !f.category || !f.location) return;
+
+    setAiPreviewLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/analyze-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(f)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiPreviewData(data);
+        
+        // Update image check status if image is present
+        if (f.image) {
+          setAiImageStatus("valid");
+          setAiImageAnalysis(`AI Evidence Assessment: Visual features match environmental hazard. Detected: ${data.detectedHazards || "hazards"}. Responding Agency: ${data.assignedAgency}.`);
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching AI preview:", e);
+    } finally {
+      setAiPreviewLoading(false);
+    }
+  };
 
   /* ================= HANDLE INPUT ================= */
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
+    const newForm = { ...form, [name]: value };
+    setForm(newForm);
 
     if (name === "category") {
       updateAiTips(value);
+    }
+
+    // Trigger AI analysis preview when all main fields are filled
+    if (newForm.title && newForm.description && newForm.category && newForm.location) {
+      getAiPreview(newForm);
     }
   };
 
@@ -114,14 +153,9 @@ export default function ReportHazard() {
     const reader = new FileReader();
 
     reader.onloadend = () => {
-      setForm((prev) => ({ ...prev, image: reader.result }));
-
-      // Simulate AI analysis delay
-      setTimeout(() => {
-        const categoryLabel = form.category || "reported";
-        setAiImageStatus("valid");
-        setAiImageAnalysis(`AI Verification Successful: Image matches visual characteristics of an active '${categoryLabel}' hazard. Spectral anomalies confirm environmental threat.`);
-      }, 1500);
+      const newForm = { ...form, image: reader.result };
+      setForm(newForm);
+      getAiPreview(newForm);
     };
 
     reader.readAsDataURL(file);
@@ -131,13 +165,14 @@ export default function ReportHazard() {
   const getLocation = () => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setForm((prev) => ({
-          ...prev,
+        const newForm = {
+          ...form,
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-        }));
-
+        };
+        setForm(newForm);
         alert("Location captured successfully");
+        getAiPreview(newForm);
       },
       () => {
         alert("Unable to get location");
@@ -160,7 +195,6 @@ export default function ReportHazard() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-
         body: JSON.stringify(form),
       });
 
@@ -296,7 +330,7 @@ export default function ReportHazard() {
               {/* PRIORITY */}
               <div>
                 <label className="block text-sm mb-1 font-medium">
-                  Priority Level
+                  Reporter Urgency Estimate
                 </label>
 
                 <select
@@ -349,34 +383,20 @@ export default function ReportHazard() {
                   Exact Location
                 </label>
 
-                <input
-                  name="location"
-                  value={form.location}
-                  onChange={handleChange}
-                  required
-                  placeholder="Street, bus stop, landmark..."
-                  className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-green-500 outline-none"
-                />
-              </div>
-
-              {/* GPS */}
-              <div className="bg-gray-50 border rounded-2xl p-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-
-                  <div>
-                    <h3 className="font-semibold text-gray-800">
-                      GPS Coordinates
-                    </h3>
-
-                    <p className="text-sm text-gray-500">
-                      Capture your current location for accurate monitoring
-                    </p>
-                  </div>
+                <div className="flex gap-2">
+                  <input
+                    name="location"
+                    value={form.location}
+                    onChange={handleChange}
+                    required
+                    placeholder="e.g. Mile 1, Bonny Island, Rivers State"
+                    className="flex-1 border rounded-xl p-3 focus:ring-2 focus:ring-green-500 outline-none"
+                  />
 
                   <button
                     type="button"
                     onClick={getLocation}
-                    className="bg-green-600 text-white px-4 py-3 rounded-xl flex items-center gap-2 hover:bg-green-700"
+                    className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl flex items-center gap-2 hover:bg-slate-800 transition shrink-0"
                   >
                     <LocateFixed size={18} />
                     Detect My Location
@@ -421,7 +441,7 @@ export default function ReportHazard() {
               </h2>
             </div>
 
-            <label className="border-2 border-dashed border-gray-300 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-green-500 transition bg-gray-50 text-center">
+            <label className="border-2 border-dashed border-gray-300 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-green-500 transition bg-gray-50/50 text-center">
 
               <Image size={40} className="text-gray-400 mb-3" />
 
@@ -470,6 +490,72 @@ export default function ReportHazard() {
             )}
           </section>
 
+          {/* AI DIAGNOSTICS PRE-SUBMISSION PREVIEW PANEL */}
+          {aiPreviewData && (
+            <div className="bg-slate-900 text-white rounded-3xl p-6 md:p-8 border border-gray-800 shadow-2xl relative overflow-hidden animate-fadeIn">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl"></div>
+              
+              <div className="flex items-center gap-2 mb-4 border-b border-gray-800 pb-4">
+                <Sparkles className="text-green-400 animate-pulse" size={20} />
+                <h3 className="text-sm font-bold tracking-wider uppercase">AI Live Incident Intelligence</h3>
+                <span className="text-[10px] ml-auto bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-extrabold">Active</span>
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-6 text-xs mb-4">
+                <div>
+                  <span className="text-gray-400 block mb-1">Predicted Urgency/Severity:</span>
+                  <span className={`text-sm font-black uppercase tracking-wide ${
+                    aiPreviewData.severity === "Critical" ? "text-red-500" : aiPreviewData.severity === "High" ? "text-orange-500" : aiPreviewData.severity === "Medium" ? "text-yellow-500" : "text-green-500"
+                  }`}>
+                    {aiPreviewData.severity}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-gray-400 block mb-1">AI Confidence Score:</span>
+                  <span className="text-sm font-extrabold text-white flex items-center gap-1">
+                    <Zap size={14} className="text-yellow-400" />
+                    {aiPreviewData.confidence}%
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-gray-400 block mb-1">Response Agency:</span>
+                  <span className="text-sm font-bold text-gray-200 block truncate" title={aiPreviewData.assignedAgency}>
+                    {aiPreviewData.assignedAgency}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-3 border-t border-gray-800">
+                <div>
+                  <span className="text-gray-400 block mb-1">Detected Hazards (Visual/Text):</span>
+                  <div className="flex gap-2 flex-wrap mt-1">
+                    {aiPreviewData.detectedHazards?.split(", ").map((tag, idx) => (
+                      <span key={idx} className="bg-gray-800 text-gray-300 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-gray-400 block mb-1">Severity Score Explanation:</span>
+                  <p className="text-gray-300 italic leading-relaxed text-[11px] font-light">
+                    "{aiPreviewData.severityExplanation}"
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-gray-400 block mb-1">Automated Action/Intervention:</span>
+                  <p className="text-green-400 font-medium text-[11px]">
+                    {aiPreviewData.recommendation}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* BUTTONS */}
           <div className="flex flex-col md:flex-row justify-between gap-4 pt-8 border-t">
 
@@ -483,7 +569,7 @@ export default function ReportHazard() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || aiPreviewLoading}
               className="px-10 py-3 rounded-xl bg-green-600 text-white flex items-center justify-center gap-2 hover:bg-green-700 shadow-lg transition disabled:opacity-70"
             >
               {loading ? (

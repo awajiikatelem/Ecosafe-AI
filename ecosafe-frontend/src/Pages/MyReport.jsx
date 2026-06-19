@@ -86,7 +86,7 @@ export default function MyReports() {
         <div className="flex gap-3 flex-wrap">
           <button
             onClick={() => navigate("/ReportPage")}
-            className="flex items-center gap-2 bg-green-650 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition hover-lift cursor-pointer"
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition hover-lift cursor-pointer"
           >
             <PlusCircle size={16} />
             Report Hazard

@@ -1,4 +1,4 @@
-import { ArrowLeft, Flame, UploadCloud, ShieldAlert, Phone } from "lucide-react";
+import { ArrowLeft, Flame, UploadCloud, ShieldAlert, Phone, Sparkles, Zap, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 
@@ -15,9 +15,49 @@ export default function ReportFire() {
 
   const [submitted, setSubmitted] = useState(false);
   const [imageName, setImageName] = useState("");
+  const [imageBase64, setImageBase64] = useState(null);
+  const [aiPreviewData, setAiPreviewData] = useState(null);
+  const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const getAiPreview = async (updatedForm) => {
+    const f = updatedForm || form;
+    if (!f.fullname || !f.phone || !f.location || !f.description) return;
+
+    setAiPreviewLoading(true);
+    try {
+      const payload = {
+        title: `🚨 Fire outbreak reported by ${f.fullname}`,
+        description: `${f.description} [Reporter contact: ${f.phone}]`,
+        category: "Fire Outbreak",
+        location: f.location,
+        image: f.imageBase64 || imageBase64
+      };
+
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/analyze-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiPreviewData(data);
+      }
+    } catch (e) {
+      console.error("Error fetching AI preview:", e);
+    } finally {
+      setAiPreviewLoading(false);
+    }
+  };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    const newForm = { ...form, [name]: value };
+    setForm(newForm);
+    
+    if (newForm.fullname && newForm.phone && newForm.location && newForm.description) {
+      getAiPreview(newForm);
+    }
   };
 
   const handleImage = (e) => {
@@ -25,11 +65,19 @@ export default function ReportFire() {
     if (file) {
       setForm({ ...form, image: file });
       setImageName(file.name);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageBase64(reader.result);
+        getAiPreview({ ...form, image: file, imageBase64: reader.result });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
 
     const data = new FormData();
     data.append("fullname", form.fullname);
@@ -58,6 +106,8 @@ export default function ReportFire() {
     } catch (err) {
       console.error(err);
       alert("Failed to submit fire report.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -160,11 +210,89 @@ export default function ReportFire() {
                 </label>
               </div>
 
+              {/* AI DIAGNOSTICS PRE-SUBMISSION PREVIEW PANEL */}
+              {aiPreviewLoading && (
+                <div className="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-center gap-3 border border-gray-800 animate-pulse">
+                  <Loader2 className="animate-spin text-red-500" size={18} />
+                  <span className="text-xs font-semibold">AI is analyzing the fire emergency metrics...</span>
+                </div>
+              )}
+
+              {!aiPreviewLoading && aiPreviewData && (
+                <div className="bg-slate-900 text-white rounded-2xl p-5 border border-gray-800 shadow-xl relative overflow-hidden animate-fadeIn space-y-4">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 rounded-full blur-2xl"></div>
+                  
+                  <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
+                    <Sparkles className="text-red-400 animate-pulse" size={18} />
+                    <h3 className="text-[11px] font-bold tracking-wider uppercase text-red-400">AI Fire Emergency Intelligence</h3>
+                    <span className="text-[9px] ml-auto bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full font-extrabold">Active</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <span className="text-gray-400 block mb-0.5 text-[10px]">Predicted Urgency/Severity:</span>
+                      <span className="text-xs font-black uppercase text-red-500 tracking-wider flex items-center gap-1">
+                        <Flame size={12} className="text-red-500 animate-bounce" />
+                        {aiPreviewData.severity}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400 block mb-0.5 text-[10px]">Confidence:</span>
+                      <span className="text-xs font-extrabold text-white flex items-center gap-1">
+                        <Zap size={12} className="text-yellow-400" />
+                        {aiPreviewData.confidence}%
+                      </span>
+                    </div>
+
+                    <div className="col-span-2">
+                      <span className="text-gray-400 block mb-0.5 text-[10px]">Assigned Agency:</span>
+                      <span className="text-xs font-bold text-gray-200">{aiPreviewData.assignedAgency}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-gray-800 text-[10px]">
+                    <div>
+                      <span className="text-gray-400 block mb-0.5">Detected Hazard Markers:</span>
+                      <div className="flex gap-1.5 flex-wrap mt-0.5">
+                        {aiPreviewData.detectedHazards?.split(", ").map((tag, idx) => (
+                          <span key={idx} className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[9px] uppercase font-extrabold tracking-wide">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400 block mb-0.5">Urgency Explanation:</span>
+                      <p className="text-gray-300 italic font-light leading-relaxed">
+                        "{aiPreviewData.severityExplanation}"
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="text-gray-400 block mb-0.5">Recommended Safety Protocol:</span>
+                      <p className="text-red-400 font-medium">
+                        {aiPreviewData.recommendation}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white w-full py-4 rounded-xl font-bold text-xs shadow-md shadow-red-600/10 hover:shadow-lg transition cursor-pointer"
+                disabled={submitting}
+                className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white w-full py-4 rounded-xl font-bold text-xs shadow-md shadow-red-600/10 hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
               >
-                Submit Critical Fire Incident Report
+                {submitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Submitting Emergency Report...
+                  </>
+                ) : (
+                  "Submit Critical Fire Incident Report"
+                )}
               </button>
             </form>
           </div>

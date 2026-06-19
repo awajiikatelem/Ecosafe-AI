@@ -33,6 +33,9 @@ export default function UserDashboard() {
   // ✅ REAL REPORTS FROM BACKEND
   const [reports, setReports] = useState([]);
   const [communityRisks, setCommunityRisks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -41,55 +44,83 @@ export default function UserDashboard() {
       return;
     }
 
+    const fetchAllData = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const [reportsRes, profileRes, risksData, notifRes] = await Promise.all([
+          fetch(`${baseUrl}/report`, { headers }),
+          fetch(`${baseUrl}/profile`, { headers }),
+          getCommunityRisks(),
+          fetch(`${baseUrl}/notifications`, { headers })
+        ]);
+
+        if (reportsRes.ok) {
+          const data = await reportsRes.json();
+          if (Array.isArray(data)) setReports(data);
+        }
+        if (profileRes.ok) {
+          setProfile(await profileRes.json());
+        }
+        if (Array.isArray(risksData)) {
+          setCommunityRisks(risksData);
+        }
+        if (notifRes.ok) {
+          setNotifications(await notifRes.json());
+        }
+      } catch (err) {
+        console.error("Error loading dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Define individual fetchers for Socket.IO single-updates
     const fetchReports = async () => {
       try {
         const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` }
         });
-
         const data = await res.json();
-        if (res.ok && Array.isArray(data)) {
-          setReports(data);
-        }
-      } catch (err) {
-        console.log(err);
-      }
+        if (res.ok && Array.isArray(data)) setReports(data);
+      } catch (err) { console.error(err); }
     };
-
-    const fetchProfile = async () => {
+    
+    const fetchNotifications = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/profile`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/notifications`, {
+          headers: { Authorization: `Bearer ${token}` }
         });
-
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data);
-        }
-      } catch (err) {
-        console.log(err);
-      }
+        if (res.ok) setNotifications(await res.json());
+      } catch (err) { console.error(err); }
     };
 
-    const fetchRisks = async () => {
-      try {
-        const data = await getCommunityRisks();
-        if (Array.isArray(data)) {
-          setCommunityRisks(data);
-        }
-      } catch (err) {
-        console.log("Error loading community risks:", err);
-      }
-    };
+    fetchAllData();
 
-    fetchReports();
-    fetchProfile();
-    fetchRisks();
+    import("socket.io-client").then(({ default: io }) => {
+      const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+      
+      socket.on("new-report", fetchReports);
+      socket.on("report-updated", fetchReports);
+      socket.on("new-notification", fetchNotifications);
+
+      return () => {
+        socket.disconnect();
+      };
+    });
   }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-gray-200 dark:border-gray-700 border-t-green-500 rounded-full animate-spin"></div>
+          <p className="text-gray-500 dark:text-gray-400 font-semibold animate-pulse text-sm">Loading EcoSafe Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`${dark ? "bg-gray-900 text-white" : "bg-gray-100"} flex min-h-screen`}>
@@ -202,10 +233,48 @@ export default function UserDashboard() {
           </div>
 
           <div className="flex gap-5">
-            <button onClick={() => setDark(!dark)}>
-              {dark ? <Sun /> : <Moon />}
-            </button>
+            {/* NOTIFICATION BELL */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+              >
+                <Bell size={20} />
+                {notifications.length > 0 && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-gray-900"></span>
+                )}
+              </button>
 
+              {showNotifications && (
+                <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-lg border z-50 overflow-hidden ${dark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"}`}>
+                  <div className={`p-3 border-b font-bold text-sm flex justify-between items-center ${dark ? "border-gray-700 bg-gray-900/50" : "bg-slate-50"}`}>
+                    <span>System Alerts</span>
+                    <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px]">{notifications.length} New</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-gray-500">No new alerts.</div>
+                    ) : (
+                      notifications.map(n => (
+                        <div key={n.id} className={`p-3 border-b text-xs flex gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer ${dark ? "border-gray-700" : "border-gray-50"}`}>
+                          <div className="mt-0.5 shrink-0">
+                            {n.type === "Critical_Alert" ? <AlertTriangle size={14} className="text-red-500" /> : <Bell size={14} className="text-blue-500" />}
+                          </div>
+                          <div>
+                            <p className="font-semibold mb-1 leading-relaxed">{n.message}</p>
+                            <p className="text-[10px] opacity-60">{new Date(n.created_at).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => setDark(!dark)} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+              {dark ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
             <button
               onClick={() => navigate("/ReportPage")}
               className="bg-green-600 text-white px-4 py-2 rounded-lg flex gap-2"

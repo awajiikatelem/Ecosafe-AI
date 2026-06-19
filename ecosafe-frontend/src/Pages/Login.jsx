@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { Eye, EyeOff, ShieldAlert, CheckCircle } from "lucide-react";
 
 function Login() {
   const navigate = useNavigate();
@@ -8,40 +8,68 @@ function Login() {
   const [form, setForm] = useState({
     email: "",
     password: "",
+    confirmPassword: "",
   });
 
   const [showPassword, setShowPassword] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [error, setError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
     setError("");
+    setResetSuccess("");
 
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error);
+    if (isForgotPassword) {
+      if (form.password !== form.confirmPassword) {
+        setError("Passwords do not match");
         return;
       }
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, newPassword: form.password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error);
+          return;
+        }
+        setResetSuccess("Password reset successfully. You can now log in.");
+        setIsForgotPassword(false);
+        setForm({ email: "", password: "", confirmPassword: "" });
+      } catch (err) {
+        setError("Server not reachable. Please check connection.");
+      }
+    } else {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, password: form.password }),
+        });
 
-      // Save token
-      localStorage.setItem("token", data.token);
+        const data = await res.json();
 
-      // Go to dashboard
-      navigate("/dashboard");
-    } catch (err) {
-      setError("Server not reachable. Please check connection.");
+        if (!res.ok) {
+          setError(data.error);
+          return;
+        }
+
+        // Save token
+        localStorage.setItem("token", data.token);
+
+        // Go to dashboard
+        navigate("/dashboard");
+      } catch (err) {
+        setError("Server not reachable. Please check connection.");
+      }
     }
   };
 
@@ -61,45 +89,54 @@ function Login() {
         </div>
 
         <h2 className="text-2xl font-extrabold tracking-tight text-gray-800">
-          Welcome to EcoSafe
+          {isForgotPassword ? "Reset Password" : "Welcome to EcoSafe"}
         </h2>
         <p className="text-xs text-gray-400 mt-1.5 mb-8">
-          Protecting Communities through Technology
+          {isForgotPassword ? "Create a new strong password below" : "Protecting Communities through Technology"}
         </p>
 
         {/* SWITCH TABS */}
-        <div className="flex bg-gray-100 p-1.5 rounded-xl mb-6 gap-1">
-          <button
-            onClick={() => navigate("/login")}
-            className="flex-1 py-2.5 rounded-lg text-xs font-bold bg-white text-green-700 shadow-sm transition cursor-pointer"
-          >
-            Login
-          </button>
+        {!isForgotPassword && (
+          <div className="flex bg-gray-100 p-1.5 rounded-xl mb-6 gap-1">
+            <button
+              onClick={() => navigate("/login")}
+              className="flex-1 py-2.5 rounded-lg text-xs font-bold bg-white text-green-700 shadow-sm transition cursor-pointer"
+            >
+              Login
+            </button>
 
-          <button 
-            onClick={() => navigate("/Signup")}
-            className="flex-1 py-2.5 rounded-lg text-xs font-bold text-gray-500 hover:text-gray-700 transition cursor-pointer"
-          >
-            Sign Up
-          </button>
-        </div>
+            <button 
+              onClick={() => navigate("/Signup")}
+              className="flex-1 py-2.5 rounded-lg text-xs font-bold text-gray-500 hover:text-gray-700 transition cursor-pointer"
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
-        {/* ERROR MESSAGE */}
+        {/* MESSAGES */}
         {error && (
-          <div className="bg-red-50 border border-red-200/50 text-red-700 p-3 rounded-xl mb-4 text-xs font-semibold flex items-center gap-2">
+          <div className="bg-red-50 border border-red-200/50 text-red-700 p-3 rounded-xl mb-4 text-xs font-semibold flex items-center gap-2 text-left">
             <ShieldAlert size={14} className="shrink-0" />
             <span>{error}</span>
           </div>
         )}
+        {resetSuccess && (
+          <div className="bg-green-50 border border-green-200/50 text-green-700 p-3 rounded-xl mb-4 text-xs font-semibold flex items-center gap-2 text-left">
+            <CheckCircle size={14} className="shrink-0" />
+            <span>{resetSuccess}</span>
+          </div>
+        )}
 
         {/* FORM */}
-        <form onSubmit={handleLogin} className="text-left space-y-4">
+        <form onSubmit={handleAuth} className="text-left space-y-4">
           <div>
             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Email Address</label>
             <input
               type="email"
               name="email"
               required
+              value={form.email}
               placeholder="e.g. name@domain.com"
               onChange={handleChange}
               className="w-full p-3 text-sm border border-gray-200/80 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition"
@@ -107,11 +144,26 @@ function Login() {
           </div>
 
           <div className="relative">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Password</label>
+            <div className="flex justify-between items-end mb-1.5">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
+                {isForgotPassword ? "New Password" : "Password"}
+              </label>
+              {!isForgotPassword && (
+                <button 
+                  type="button" 
+                  onClick={() => { setIsForgotPassword(true); setError(""); setResetSuccess(""); }}
+                  className="text-[11px] font-bold text-green-600 hover:underline cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
+              )}
+            </div>
+            
             <input
               type={showPassword ? "text" : "password"}
               name="password"
               required
+              value={form.password}
               placeholder="••••••••"
               onChange={handleChange}
               className="w-full p-3 text-sm pr-10 border border-gray-200/80 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition"
@@ -119,29 +171,58 @@ function Login() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-9 text-gray-400 hover:text-green-600 transition focus:outline-none cursor-pointer"
+              className="absolute right-3 top-[34px] text-gray-400 hover:text-green-600 transition focus:outline-none cursor-pointer"
             >
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
 
+          {isForgotPassword && (
+            <div className="relative">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Confirm New Password</label>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="confirmPassword"
+                required
+                value={form.confirmPassword}
+                placeholder="••••••••"
+                onChange={handleChange}
+                className="w-full p-3 text-sm pr-10 border border-gray-200/80 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition"
+              />
+            </div>
+          )}
+
           <button
             type="submit"
             className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white w-full py-3 rounded-xl font-bold text-sm shadow-md shadow-green-600/10 hover:shadow-lg hover:shadow-green-600/15 transition cursor-pointer mt-6"
           >
-            Access Dashboard
+            {isForgotPassword ? "Reset Password" : "Access Dashboard"}
           </button>
         </form>
 
-        <p className="text-xs mt-6 text-gray-500">
-          Don’t have an account?{" "}
-          <span
-            onClick={() => navigate("/Signup")}
-            className="text-green-600 cursor-pointer font-bold hover:underline"
-          >
-            Create Account
-          </span>
-        </p>
+        <div className="mt-6">
+          {isForgotPassword ? (
+            <p className="text-xs text-gray-500">
+              Remember your password?{" "}
+              <span
+                onClick={() => { setIsForgotPassword(false); setError(""); }}
+                className="text-green-600 cursor-pointer font-bold hover:underline"
+              >
+                Back to Login
+              </span>
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500">
+              Don’t have an account?{" "}
+              <span
+                onClick={() => navigate("/Signup")}
+                className="text-green-600 cursor-pointer font-bold hover:underline"
+              >
+                Create Account
+              </span>
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

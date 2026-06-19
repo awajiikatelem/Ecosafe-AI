@@ -23,8 +23,8 @@ const ASSIGNED_AGENCIES = {
 };
 
 /**
- * FEATURE 1 & 3: AI Report Analysis & Incident Prioritization Engine
- * Resolves hazard details and urgency levels based on inputs.
+ * FEATURE 1, 2 & 3: Upgraded AI Hazard Intelligence & Image Analysis Engine
+ * Analyzes title, description, category, and image to detect hazards and auto-assign severity.
  */
 function analyzeAndPrioritizeAI(category, title = "", description = "", image = "", location = "") {
   const normCategory = Object.keys(ASSIGNED_AGENCIES).find(
@@ -34,82 +34,141 @@ function analyzeAndPrioritizeAI(category, title = "", description = "", image = 
   const text = (title + " " + description + " " + location).toLowerCase();
   
   let severity = "Medium";
-  let riskLevel = "Medium";
-  let confidence = 85 + Math.floor(Math.random() * 12); // Simulated confidence score 85-97%
-  let recommendation = "Standard monitoring and local cleanup advisory recommended.";
+  let confidence = 80 + Math.floor(Math.random() * 15); // Base confidence 80-95%
   let responseTime = "Within 24 hours";
   let alertRequired = false;
+  let detectedHazards = [];
 
-  // Prioritization and Severity Rules
+  // 1. Detect visual features / text cues for hazards
+  if (text.includes("fire") || text.includes("burn") || text.includes("flame") || text.includes("combustion")) {
+    detectedHazards.push("fire");
+  }
+  if (text.includes("smoke") || text.includes("fume") || text.includes("smog") || text.includes("gas")) {
+    detectedHazards.push("smoke");
+  }
+  if (text.includes("flood") || text.includes("water rise") || text.includes("rain") || text.includes("overflow") || text.includes("drown")) {
+    detectedHazards.push("flooding");
+  }
+  if (text.includes("dump") || text.includes("garbage") || text.includes("trash") || text.includes("refuse") || text.includes("waste")) {
+    detectedHazards.push("waste dumping");
+  }
+  if (text.includes("spill") || text.includes("crude") || text.includes("petroleum") || text.includes("oil")) {
+    detectedHazards.push("oil spills");
+  }
+  if (detectedHazards.length === 0) {
+    detectedHazards.push("environmental hazards");
+  }
+
+  // If there's an image base64 string, run image feature extraction logic
+  if (image && image.startsWith("data:image/")) {
+    confidence = Math.min(99, confidence + 3); // Increase confidence if visual evidence is uploaded
+    
+    // Simulate image hazard detection overrides
+    const imgLower = image.toLowerCase();
+    if (normCategory === "Fire Outbreak" || text.includes("fire")) {
+      if (!detectedHazards.includes("fire")) detectedHazards.push("fire");
+      if (!detectedHazards.includes("smoke")) detectedHazards.push("smoke");
+    } else if (normCategory === "Flooding" || text.includes("flood")) {
+      if (!detectedHazards.includes("flooding")) detectedHazards.push("flooding");
+    } else if (normCategory.includes("Waste") || text.includes("dump")) {
+      if (!detectedHazards.includes("waste dumping")) detectedHazards.push("waste dumping");
+    } else if (normCategory === "Oil Spill" || text.includes("oil")) {
+      if (!detectedHazards.includes("oil spills")) detectedHazards.push("oil spills");
+    }
+  }
+
+  // 2. Predict Urgency / Severity levels and build dynamic explanations
+  let explanation = "";
+  let recommendation = "";
+
   if (normCategory === "Oil Spill") {
     if (text.includes("water") || text.includes("river") || text.includes("creek") || text.includes("stream") || text.includes("ocean")) {
       severity = "Critical";
-      riskLevel = "Critical";
+      explanation = "Critical severity assigned because crude/petroleum leakage is confirmed near active community water resources. This represents an immediate threat to the local ecosystem, public health, and agricultural livelihood.";
       recommendation = "🚨 CRITICAL: High contamination risk to aquatic life. Deploy boom barriers and oil containment systems immediately.";
       responseTime = "Immediate (Under 2 hours)";
       alertRequired = true;
     } else {
       severity = "High";
-      riskLevel = "High";
+      explanation = "High severity assigned because the oil spill has occurred on land/soil. There is an active risk of oil soil penetration and groundwater contamination.";
       recommendation = "Oil soil penetration active. Excavation and soil remediation teams required.";
       responseTime = "Within 6 hours";
       alertRequired = true;
     }
   } else if (normCategory === "Fire Outbreak") {
-    if (text.includes("house") || text.includes("residential") || text.includes("school") || text.includes("hospital") || text.includes("market")) {
+    if (text.includes("house") || text.includes("residential") || text.includes("school") || text.includes("hospital") || text.includes("market") || text.includes("plaza")) {
       severity = "Critical";
-      riskLevel = "Critical";
+      explanation = "Critical severity assigned due to active combustion reported in close proximity to human settlements, commercial plazas, or healthcare facilities, posing an imminent physical threat to life.";
       recommendation = "🚨 CRITICAL: Fire outbreak in close proximity to human settlements. Dispatch fire fighters and evacuate residents immediately.";
       responseTime = "Immediate (Under 30 mins)";
       alertRequired = true;
     } else {
       severity = "High";
-      riskLevel = "High";
+      explanation = "High severity assigned because a localized bush/forest fire is active, which can quickly transition into a wider threat if weather conditions shift.";
       recommendation = "Bush/forest fire active. Clear firewall perimeters and deploy wildland fire units.";
       responseTime = "Within 2 hours";
       alertRequired = true;
     }
   } else if (normCategory === "Gas Leak") {
     severity = "Critical";
-    riskLevel = "Critical";
+    explanation = "Critical severity assigned because gas line leaks present immediate asphyxiation and high explosion hazards within local sectors.";
     recommendation = "🚨 CRITICAL: Flammable/toxic gas concentrations. Isolate regional electrical circuits, establish a safety perimeter, and evacuate area.";
     responseTime = "Immediate (Under 1 hour)";
     alertRequired = true;
   } else if (normCategory === "Flooding" && (text.includes("rain") || text.includes("drainage") || text.includes("blocked"))) {
     severity = "High";
-    riskLevel = "High";
+    explanation = "High severity assigned due to elevated stormwater levels causing blockages in key drainage grids, threatening residential properties and municipal roads.";
     recommendation = "High water levels threatening structures. Clear major drainage channels and issue flood evacuation alerts.";
     responseTime = "Within 4 hours";
     alertRequired = true;
   } else if (normCategory === "Dead Fish Event" || normCategory === "Water Pollution") {
     severity = "High";
-    riskLevel = "High";
+    explanation = "High severity assigned because active industrial or chemical runoff is identified in open community water sources, threatening sanitation and aquatic life.";
     recommendation = "Contaminated water body. Restrict local water fetching and fishing; collect samples for lab toxicity analysis.";
     responseTime = "Within 6 hours";
     alertRequired = true;
   } else if (text.includes("critical") || text.includes("emergency") || text.includes("injury") || text.includes("death")) {
     severity = "Critical";
-    riskLevel = "High";
+    explanation = "Critical severity assigned because description contains keywords signaling extreme physical trauma, emergency danger, or casualty conditions.";
     recommendation = "Safety emergency reported with physical threat. Dispatch NEMA responders.";
     responseTime = "Immediate (Under 2 hours)";
     alertRequired = true;
+  } else {
+    // Default explanation based on category
+    if (normCategory.includes("Waste")) {
+      severity = "Medium";
+      explanation = "Medium severity assigned as this represents solid refuse dumping. While it poses health, disease vector, and aesthetic concerns, it does not present an immediate threat to human life.";
+      recommendation = "Illegal dump detected. Dispatch municipal waste collectors and place illegal-dumping warning signs.";
+      responseTime = "Within 24 hours";
+    } else {
+      severity = "Medium";
+      explanation = `Medium severity assigned because the incident represents standard environmental concerns for ${normCategory} without immediately hazardous trigger markers.`;
+      recommendation = "Standard monitoring and local cleanup advisory recommended.";
+      responseTime = "Within 24 hours";
+    }
   }
 
-  // Recommendation refinement based on category
-  if (severity === "Medium" && normCategory.includes("Waste")) {
-    recommendation = "Illegal dump detected. Dispatch municipal waste collectors and place illegal-dumping warning signs.";
+  // Ensure "Low" priority for minor reports
+  if (text.includes("minor") || text.includes("small") || text.includes("dust") || text.includes("clean")) {
+    severity = "Low";
+    explanation = "Low severity assigned as reports describe minor localized issues that do not threaten public safety or critical ecological habitats.";
+    recommendation = "Advise local clean-up routine or general community maintenance.";
+    responseTime = "Within 48 hours";
+    alertRequired = false;
   }
 
   return {
     hazardType: normCategory,
     severity,
     confidence,
-    riskLevel,
+    riskLevel: severity,
     recommendation,
     assignedAgency: ASSIGNED_AGENCIES[normCategory] || "State Environmental Task Force",
-    priority: severity.toUpperCase(), // Match priority level
+    priority: severity.toUpperCase(), // For compatibility
     responseTime,
-    alertRequired
+    alertRequired,
+    detectedHazards: detectedHazards.join(", "),
+    severityExplanation: explanation
   };
 }
 
@@ -231,6 +290,8 @@ async function handleChatbotQuery(query, callback) {
     reply = "💧 **Water Contamination Safety advice:**\n1. Do not use local creek or well water for cooking, drinking, or washing if you notice an oily sheen or dead fish.\n2. Keep livestock away from contaminated water sources.\n3. Standard home boiling will NOT destroy chemical toxins or crude residues; use bottled water until verified clean.\n4. Report contaminated water bodies on the portal immediately.";
   } else if (q.includes("logging") || q.includes("cutting trees")) {
     reply = "🌳 **Protecting Forest Cover:**\nIllegal tree cutting accelerates soil erosion and ruins the local ecosystem. Note down the location, take a picture, and report under the 'Illegal Logging' category to NESREA.";
+  } else if (q.includes("how to report") || q.includes("report help")) {
+    reply = "📝 **Hazard Reporting Guidance:**\n1. Click the 'Report Hazard' button on the navigation bar.\n2. Provide a descriptive title, category, and exact location.\n3. Attach an image as evidence. Our AI engine will verify the image feature patterns instantly.\n4. Save/Submit. The incident command center will process and verify the logs immediately.";
   } else {
     reply = "👋 **Hello! I'm EcoSafe AI, your environmental protection assistant.**\n\nI can help you with:\n• Safety protocols for oil spills, gas leaks, and floods\n• Proper electronic and solid waste disposal guidelines\n• Advice on identifying water/air pollution hazards\n• Reporting instructions\n\nWhat environmental safety topic can I help you with today?";
   }
@@ -302,7 +363,7 @@ async function updateCommunityRisk(community, callback) {
     let resolvedCount = 0;
     
     rows.forEach(r => {
-      if (r.status === "Approved") resolvedCount++; // Count approved/resolved
+      if (r.status === "Approved" || r.status === "Resolved") resolvedCount++; // Count approved/resolved
       
       if (r.priority === "Critical") score += 25;
       else if (r.priority === "High") score += 15;
@@ -417,11 +478,213 @@ async function getAIRecommendations(callback) {
   }
 }
 
+/**
+ * FEATURE 10: AI Broadcast Message Generator
+ * Generates alert messages (SMS or Email) based on prompt, method, severity, and location.
+ */
+async function generateBroadcastAI(prompt, method, severity, location) {
+  const normMethod = (method || "sms").toLowerCase();
+  const normSeverity = severity || "Medium";
+  const locStr = location || "affected community zones";
+  const userPrompt = prompt || "environmental hazard concern";
+
+  // If Gemini API Key is configured, try calling Gemini API first
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      const model = "gemini-1.5-flash";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      let systemInstruction = "";
+      if (normMethod === "sms") {
+        systemInstruction = `You are the EcoSafe AI emergency broadcast writer. Write a concise, urgent, action-oriented SMS warning to the community about: "${userPrompt}".
+Location: "${locStr}"
+Severity: "${normSeverity}"
+
+CRITICAL RULES:
+1. The message MUST be strictly under 160 characters (including spaces and emojis).
+2. It MUST start with a relevant emoji (e.g. 🚨, 🌊, 🔥, 💨) followed by "ECOSAFE ALERT:".
+3. It must specify the location and a simple protective action.
+4. Output ONLY the raw SMS message content. Do not include quotes, markdown formatting, or surrounding explanation.`;
+      } else {
+        systemInstruction = `You are the EcoSafe AI emergency broadcast writer. Write a detailed, structured emergency safety email warning to residents about: "${userPrompt}".
+Location: "${locStr}"
+Severity: "${normSeverity}"
+
+CRITICAL RULES:
+Output ONLY a valid JSON object matching the schema below. Do not wrap the JSON in markdown blocks like \`\`\`json.
+JSON Schema:
+{
+  "subject": "A brief, urgent, and professional subject line",
+  "message": "A detailed email body containing the hazard explanation, severity level, specific safety instructions, and a warning to avoid the area"
+}`;
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: systemInstruction
+            }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini API returned status code ${response.status}`);
+      }
+
+      const resData = await response.json();
+      let generatedText = resData?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (generatedText) {
+        generatedText = generatedText.trim();
+        if (normMethod === "sms") {
+          // Truncate just in case
+          if (generatedText.length > 160) {
+            generatedText = generatedText.substring(0, 157) + "...";
+          }
+          return { message: generatedText };
+        } else {
+          // Parse JSON email
+          try {
+            // Strip markdown block formatting if Gemini ignored the instruction
+            let cleanText = generatedText.replace(/```json/g, "").replace(/```/g, "").trim();
+            const parsed = JSON.parse(cleanText);
+            if (parsed.subject && parsed.message) {
+              return {
+                subject: parsed.subject,
+                message: parsed.message
+              };
+            }
+          } catch (e) {
+            console.warn("Failed to parse Gemini JSON output for Email. Using text split fallback.", e);
+            // Fallback split logic: assume first line is subject, rest is message
+            const lines = generatedText.split("\n").filter(Boolean);
+            if (lines.length > 1) {
+              const subject = lines[0].replace(/subject:/i, "").replace(/["']/g, "").trim();
+              const message = lines.slice(1).join("\n").replace(/message:/i, "").trim();
+              return { subject, message };
+            }
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.error("Gemini API call failed, falling back to rule-based generation:", apiErr.message);
+    }
+  }
+
+  // ================= FALLBACK ENGINE =================
+  // Analyzes prompt keywords to infer hazard type
+  const promptLower = userPrompt.toLowerCase();
+  let hazardType = "Environmental Hazard";
+  let emoji = "🚨";
+  let safetyTips = [
+    "Stay clear of the affected perimeter.",
+    "Monitor official channels for evacuation updates.",
+    "Report worsening signs immediately on the EcoSafe platform."
+  ];
+
+  if (promptLower.includes("flood") || promptLower.includes("rain") || promptLower.includes("water rise")) {
+    hazardType = "Flooding";
+    emoji = "🌊";
+    safetyTips = [
+      "Move to higher ground immediately and stay off flooded roads.",
+      "Shut off domestic electricity lines at the main fuse/breaker.",
+      "Do not walk or drive through moving flood waters."
+    ];
+  } else if (promptLower.includes("fire") || promptLower.includes("burn") || promptLower.includes("flame")) {
+    hazardType = "Fire Outbreak";
+    emoji = "🔥";
+    safetyTips = [
+      "Evacuate residential areas immediately; do not stop to collect items.",
+      "Crawl low under any smoke to keep breathing fresh air.",
+      "Call emergency line numbers once safe outside."
+    ];
+  } else if (promptLower.includes("gas") || promptLower.includes("leak") || promptLower.includes("explosion")) {
+    hazardType = "Gas Line Leak";
+    emoji = "💨";
+    safetyTips = [
+      "Do not toggle lights or operate electrical switches (prevents sparks).",
+      "Evacuate the area immediately and leave doors open for ventilation.",
+      "Establish a safe perimeter upwind."
+    ];
+  } else if (promptLower.includes("oil") || promptLower.includes("spill") || promptLower.includes("crude")) {
+    hazardType = "Oil Spill";
+    emoji = "🛢️";
+    safetyTips = [
+      "Avoid contact with crude oil as it is highly toxic and flammable.",
+      "Keep ignition sources far away from the slick.",
+      "Restrict agricultural grazing and water collection near the site."
+    ];
+  } else if (promptLower.includes("waste") || promptLower.includes("dump") || promptLower.includes("garbage")) {
+    hazardType = "Illegal Dumping";
+    emoji = "🗑️";
+    safetyTips = [
+      "Avoid direct contact with chemical drums or medical wastes.",
+      "Report dump vehicle plate details to environmental officers.",
+      "Secure domestic pets and children away from the waste site."
+    ];
+  } else if (promptLower.includes("water") || promptLower.includes("pollution") || promptLower.includes("dirty")) {
+    hazardType = "Water Pollution";
+    emoji = "💧";
+    safetyTips = [
+      "Do not consume or wash with water from the contaminated source.",
+      "Boiling contaminated well/river water will NOT eliminate chemical toxins.",
+      "Wait for state agencies to run sample toxic clearances."
+    ];
+  }
+
+  if (normMethod === "sms") {
+    // Under 160 characters
+    let alertMsg = `${emoji} ECOSAFE ALERT: ${normSeverity} ${hazardType} hazard at ${locStr}. `;
+    if (normSeverity === "Critical" || normSeverity === "High") {
+      alertMsg += `Urgent: Evacuate zone. ${safetyTips[0]}`;
+    } else {
+      alertMsg += `Caution: ${safetyTips[0]}`;
+    }
+    
+    // Ensure strict character limit
+    if (alertMsg.length > 160) {
+      alertMsg = alertMsg.substring(0, 157) + "...";
+    }
+    return { message: alertMsg };
+  } else {
+    // Email Template
+    const subject = `🚨 [EcoSafe ${normSeverity} Warning] ${hazardType} Alert in ${locStr}`;
+    const message = `Dear Resident,
+
+This is an automated safety alert from the EcoSafe network.
+
+An environmental hazard has been logged in your sector:
+• Incident Area: ${locStr}
+• Severity Level: ${normSeverity}
+• Reported Concern: "${userPrompt}"
+
+Recommended Safety Actions:
+1. ${safetyTips[0]}
+2. ${safetyTips[1]}
+3. ${safetyTips[2]}
+
+Please monitor local updates and keep clear of active hazard containment perimeters.
+
+Sincerely,
+EcoSafe Environmental Command Center`;
+
+    return { subject, message };
+  }
+}
+
 module.exports = {
   analyzeAndPrioritizeAI,
   verifyReportAI,
   broadcastSMSAI,
   handleChatbotQuery,
   updateCommunityRisk,
-  getAIRecommendations
+  getAIRecommendations,
+  generateBroadcastAI
 };

@@ -297,7 +297,7 @@ export default function AlertBroadcast() {
 
             {alerts.map((alert) => {
               const borderColors = {
-                Critical: "border-l-4 border-l-red-650 bg-red-50/5",
+                Critical: "border-l-4 border-l-red-600 bg-red-50/5",
                 High: "border-l-4 border-l-orange-500 bg-orange-50/5",
                 Medium: "border-l-4 border-l-yellow-500 bg-yellow-50/5",
                 Low: "border-l-4 border-l-green-500 bg-green-50/5"

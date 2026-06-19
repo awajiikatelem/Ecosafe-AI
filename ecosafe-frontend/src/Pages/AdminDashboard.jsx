@@ -15,15 +15,26 @@ import {
   ShieldAlert,
   X,
   Clock,
+  BarChart2,
+  TrendingUp,
+  Download,
+  Activity,
+  Target,
+  Zap,
+  Award,
 } from "lucide-react";
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import io from "socket.io-client";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend, PieChart, Pie, Cell } from "recharts";
+
 import { 
   getCommunityRisks, 
   getAIRecommendations, 
   broadcastSMS, 
-  getSMSLogs 
+  getSMSLogs,
+  aiGenerateBroadcast
 } from "../api";
 
 export default function AdminDashboard() {
@@ -44,13 +55,26 @@ export default function AdminDashboard() {
   const [communityRisks, setCommunityRisks] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [smsLogs, setSmsLogs] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
-  // SMS Broadcast form state
-  const [smsCommunity, setSmsCommunity] = useState("");
+  // Communications Broadcast form state
+  const [broadcastMethod, setBroadcastMethod] = useState("email"); // "sms" or "email"
+  const [smsCommunity, setSmsCommunity] = useState(""); // Used for Email Subject or SMS target
   const [smsMessage, setSmsMessage] = useState("");
   const [smsLoading, setSmsLoading] = useState(false);
   const [smsError, setSmsError] = useState("");
   const [smsSuccess, setSmsSuccess] = useState("");
+  const [lastEmailResponse, setLastEmailResponse] = useState(null);
+
+  // AI Message generation state
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiSeverity, setAiSeverity] = useState("Medium");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  // Deep Analytics state
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   const token = localStorage.getItem("adminToken");
 
@@ -116,6 +140,23 @@ export default function AdminDashboard() {
     }
   }, [token]);
 
+  /* ================= FETCH NOTIFICATIONS ================= */
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/notifications`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNotifications(data);
+      }
+    } catch (e) {
+      console.error("Error fetching notifications:", e);
+    }
+  }, [token]);
+
   /* ================= FETCH SMS LOGS ================= */
   const fetchSmsLogs = useCallback(async () => {
     try {
@@ -128,11 +169,56 @@ export default function AdminDashboard() {
     }
   }, [token]);
 
-  /* ================= SEND SMS BROADCAST ================= */
-  const handleSendSMS = async (e) => {
+  /* ================= FETCH DEEP ANALYTICS ================= */
+  const fetchAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/analytics-deep`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAnalyticsData(data);
+      }
+    } catch (e) {
+      console.error("Error fetching analytics:", e);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [token]);
+
+  /* ================= EXPORT CSV ================= */
+  const exportCSV = () => {
+    if (!reports.length) return;
+    const headers = ["Title","Category","Location","Priority","Status","AI Hazard","AI Severity","AI Confidence","AI Agency","AI Recommendation","Date"];
+    const rows = reports.map(r => [
+      `"${(r.title || "").replace(/"/g, '""')}"`,
+      `"${r.category || ""}"`,
+      `"${(r.location || "").replace(/"/g, '""')}"`,
+      r.priority || "",
+      r.status || "Pending",
+      `"${r.ai_hazard_type || ""}"`,
+      r.ai_severity || "",
+      r.ai_confidence || 0,
+      `"${r.ai_assigned_agency || ""}"`,
+      `"${(r.ai_recommendation || "").replace(/"/g, '""')}"`,
+      new Date(r.created_at).toLocaleDateString()
+    ]);
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ecosafe-reports-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /* ================= SEND BROADCAST ================= */
+  const handleSendBroadcast = async (e) => {
     e.preventDefault();
     if (!smsCommunity.trim() || !smsMessage.trim()) {
-      setSmsError("Target community and message content are required");
+      setSmsError("Target/Subject and message content are required");
       return;
     }
 
@@ -141,26 +227,76 @@ export default function AdminDashboard() {
     setSmsSuccess("");
 
     try {
-      const res = await broadcastSMS(
-        {
-          community: smsCommunity,
-          message: smsMessage
-        },
-        token
-      );
+      let response;
+      if (broadcastMethod === "sms") {
+        response = await broadcastSMS({ community: smsCommunity, message: smsMessage }, token);
+      } else {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/broadcast-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ subject: smsCommunity, message: smsMessage }),
+        });
+        response = await res.json();
+        if (!res.ok) response.error = response.error || "Failed to broadcast email";
+      }
 
-      if (res && res.message) {
-        setSmsSuccess(res.message);
+      if (response && response.message) {
+        setSmsSuccess(response.message);
+        if (broadcastMethod === "email") {
+          setLastEmailResponse(response);
+        }
         setSmsCommunity("");
         setSmsMessage("");
         fetchSmsLogs();
       } else {
-        setSmsError(res.error || "Failed to broadcast alert message");
+        setSmsError(response.error || "Failed to broadcast alert message");
       }
     } catch (err) {
       setSmsError("Server communication error occurred");
     } finally {
       setSmsLoading(false);
+    }
+  };
+
+  /* ================= AI BROADCAST GENERATION ================= */
+  const handleAIGenerateMessage = async (e) => {
+    e.preventDefault();
+    if (!aiPrompt.trim()) {
+      setAiError("Please enter some incident details first");
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError("");
+    setSmsSuccess("");
+
+    try {
+      const data = await aiGenerateBroadcast({
+        prompt: aiPrompt,
+        method: broadcastMethod,
+        severity: aiSeverity,
+        location: smsCommunity
+      }, token);
+
+      if (data && !data.error) {
+        if (broadcastMethod === "sms") {
+          setSmsMessage(data.message);
+        } else {
+          if (data.subject) {
+            setSmsCommunity(data.subject);
+          }
+          if (data.message) {
+            setSmsMessage(data.message);
+          }
+        }
+        setAiPrompt("");
+      } else {
+        setAiError(data.error || "Failed to generate AI broadcast content");
+      }
+    } catch (err) {
+      setAiError("Network/Server connection failure");
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -177,6 +313,7 @@ export default function AdminDashboard() {
       fetchCommunityRisks();
       fetchRecommendations();
       fetchSmsLogs();
+      fetchNotifications();
     };
 
     // defer initial fetch to avoid synchronous setState inside the effect
@@ -186,11 +323,27 @@ export default function AdminDashboard() {
       runFetch();
     }, 5000);
 
+    // Socket.io integration
+    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+    
+    socket.on("new-report", () => {
+      runFetch();
+    });
+
+    socket.on("report-updated", () => {
+      runFetch();
+    });
+
+    socket.on("new-notification", () => {
+      fetchNotifications();
+    });
+
     return () => {
       clearTimeout(initTimeout);
       clearInterval(interval);
+      socket.disconnect();
     };
-  }, [token, navigate, fetchReports, fetchStats, fetchCommunityRisks, fetchRecommendations, fetchSmsLogs]);
+  }, [token, navigate, fetchReports, fetchStats, fetchCommunityRisks, fetchRecommendations, fetchSmsLogs, fetchNotifications]);
 
   /* ================= APPROVE REPORT ================= */
   const approve = async (id) => {
@@ -234,6 +387,26 @@ export default function AdminDashboard() {
     }
   };
 
+  /* ================= RESOLVE REPORT ================= */
+  const resolve = async (id) => {
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/report/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: "Resolved",
+        }),
+      });
+
+      fetchReports();
+      fetchStats();
+    } catch (err) {
+      console.log(err);
+    }
+  };
   /* ================= LOGOUT ================= */
   const logout = () => {
     localStorage.removeItem("adminToken");
@@ -434,7 +607,27 @@ export default function AdminDashboard() {
                   : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
               }`}
             >
-              SMS Alerts Broadcast
+              Communications Broadcast
+            </button>
+            <button
+              onClick={() => setAdminTab("analytics")}
+              className={`pb-3 px-4 font-bold border-b-2 transition cursor-pointer ${
+                adminTab === "analytics"
+                  ? "border-green-600 text-green-600 dark:text-green-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              }`}
+            >
+              Analytics & Logs
+            </button>
+            <button
+              onClick={() => { setAdminTab("deepanalytics"); fetchAnalytics(); }}
+              className={`pb-3 px-4 font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                adminTab === "deepanalytics"
+                  ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              }`}
+            >
+              <TrendingUp size={14} /> Deep Analytics
             </button>
           </div>
 
@@ -547,7 +740,7 @@ export default function AdminDashboard() {
 
                       {/* ACTIONS */}
                       <div className="flex md:flex-col gap-2 shrink-0 justify-end md:justify-start">
-                        {report.status !== "Approved" && (
+                        {report.status !== "Approved" && report.status !== "Resolved" && (
                           <button
                             onClick={() => approve(report.id)}
                             className="bg-green-600 hover:bg-green-700 text-white px-3.5 py-2.5 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition shadow-sm cursor-pointer"
@@ -557,7 +750,17 @@ export default function AdminDashboard() {
                           </button>
                         )}
 
-                        {report.status !== "Rejected" && (
+                        {report.status === "Approved" && (
+                          <button
+                            onClick={() => resolve(report.id)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2.5 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition shadow-sm cursor-pointer"
+                          >
+                            <CheckCircle size={15} />
+                            Mark Resolved
+                          </button>
+                        )}
+
+                        {report.status !== "Rejected" && report.status !== "Resolved" && (
                           <button
                             onClick={() => reject(report.id)}
                             className="bg-red-100 dark:bg-red-950/30 text-red-600 hover:bg-red-200 px-3.5 py-2.5 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold transition cursor-pointer"
@@ -674,26 +877,90 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* TAB 4: SMS BROADCAST FEED */}
+          {/* TAB 4: COMMUNICATIONS BROADCAST FEED */}
           {adminTab === "sms" && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow p-6 animate-fadeIn">
               <div className="flex items-center gap-2 mb-6">
                 <Bell className="text-green-600" />
-                <h3 className="font-bold text-lg dark:text-white">Emergency SMS Broadcasting Center</h3>
+                <h3 className="font-bold text-lg dark:text-white">Communications Broadcasting Center</h3>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Broadcast Form */}
                 <div className="p-5 border dark:border-gray-700 rounded-2xl bg-slate-50/30 dark:bg-gray-900/10">
-                  <h3 className="font-bold text-sm mb-4 dark:text-white">Broadcast Emergency Notification</h3>
-                  <form onSubmit={handleSendSMS} className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-sm dark:text-white">Dispatch Notification</h3>
+                    <div className="flex bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+                      <button type="button" onClick={() => setBroadcastMethod("email")} className={`px-3 py-1 text-[10px] font-bold rounded-md ${broadcastMethod === "email" ? "bg-white dark:bg-gray-600 shadow-sm text-green-600" : "text-gray-500"}`}>Email</button>
+                      <button type="button" onClick={() => setBroadcastMethod("sms")} className={`px-3 py-1 text-[10px] font-bold rounded-md ${broadcastMethod === "sms" ? "bg-white dark:bg-gray-600 shadow-sm text-green-600" : "text-gray-500"}`}>SMS</button>
+                    </div>
+                  </div>
+                  <form onSubmit={handleSendBroadcast} className="space-y-4">
+                    {/* AI ASSISTANT SECTION */}
+                    <div className="mb-4 p-4 rounded-xl bg-gradient-to-br from-emerald-500/5 to-teal-500/5 border border-emerald-500/10 dark:border-emerald-500/20 text-xs">
+                      <h4 className="font-bold text-slate-800 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
+                        ✨ AI Message Drafter Assistant
+                      </h4>
+                      <p className="text-[11px] text-gray-500 mb-3">
+                        Enter incident details, specify severity, and draft warning alerts instantly.
+                      </p>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 block mb-1">
+                            Describe incident details for AI:
+                          </label>
+                          <textarea
+                            rows="2"
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                            placeholder="e.g. Severe flooding in Obio-Akpor, residents should move to high ground."
+                            className="w-full bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg p-2 text-[11px] text-slate-800 dark:text-white outline-none focus:border-green-600 resize-none font-sans"
+                          ></textarea>
+                        </div>
+                        
+                        <div className="flex gap-2 items-center">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-bold text-slate-400 block mb-1">
+                              Severity Level:
+                            </label>
+                            <select
+                              value={aiSeverity}
+                              onChange={(e) => setAiSeverity(e.target.value)}
+                              className="w-full bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg p-1.5 text-[11px] text-slate-800 dark:text-white outline-none focus:border-green-600"
+                            >
+                              <option value="Critical">🚨 Critical</option>
+                              <option value="High">🟠 High</option>
+                              <option value="Medium">🟡 Medium</option>
+                              <option value="Low">🟢 Low</option>
+                            </select>
+                          </div>
+                          
+                          <div className="pt-4">
+                            <button
+                              type="button"
+                              onClick={handleAIGenerateMessage}
+                              disabled={aiLoading || !aiPrompt.trim()}
+                              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition shadow-sm cursor-pointer flex items-center gap-1 shrink-0"
+                            >
+                              {aiLoading ? "Drafting..." : "Generate Draft ✨"}
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {aiError && <p className="text-[10px] text-red-500 font-semibold">{aiError}</p>}
+                      </div>
+                    </div>
+
                     <div>
-                      <label className="text-xs font-semibold text-slate-400 block mb-1">Target Community / Location:</label>
+                      <label className="text-xs font-semibold text-slate-400 block mb-1">
+                        {broadcastMethod === "email" ? "Email Subject:" : "Target Community / Location:"}
+                      </label>
                       <input
                         type="text"
                         value={smsCommunity}
                         onChange={(e) => setSmsCommunity(e.target.value)}
-                        placeholder="e.g. Obio-Akpor, Port Harcourt"
+                        placeholder={broadcastMethod === "email" ? "e.g. Critical Flood Warning" : "e.g. Obio-Akpor, Port Harcourt"}
                         className="w-full bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg p-2.5 text-xs text-slate-800 dark:text-white outline-none focus:border-green-600"
                         required
                       />
@@ -712,21 +979,47 @@ export default function AdminDashboard() {
                     </div>
 
                     {smsError && <p className="text-xs text-red-500 font-bold">{smsError}</p>}
-                    {smsSuccess && <p className="text-xs text-green-500 font-bold">{smsSuccess}</p>}
+                    
+                    {smsSuccess && (
+                      <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 space-y-2">
+                        <p className="text-[11px] text-green-600 font-bold flex items-center gap-1.5">
+                          ✅ {smsSuccess}
+                        </p>
+                        {lastEmailResponse?.previewUrl && (
+                          <div className="space-y-1.5">
+                            <a
+                              href={lastEmailResponse.previewUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-1.5 text-[10px] text-blue-600 hover:text-blue-700 font-bold underline break-all"
+                            >
+                              📧 View this email in Ethereal →
+                            </a>
+                            <div className="text-[10px] text-gray-500 bg-white dark:bg-gray-900 rounded-lg p-2 border dark:border-gray-700 space-y-1">
+                              <p className="font-bold text-slate-600 dark:text-slate-300">📬 Ethereal Test Inbox Login:</p>
+                              <p>URL: <a href="https://ethereal.email/login" target="_blank" rel="noreferrer" className="text-blue-500 underline">https://ethereal.email/login</a></p>
+                              <p>Email: <strong className="text-slate-700 dark:text-slate-200">{lastEmailResponse.etherealCredentials?.user || "hoh4u4m2dd5teotv@ethereal.email"}</strong></p>
+                              <p>Password: <strong className="text-slate-700 dark:text-slate-200">{lastEmailResponse.etherealCredentials?.pass || "qnuDrpPvkFZWnBpQMs"}</strong></p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <button
                       type="submit"
                       disabled={smsLoading}
                       className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer"
                     >
-                      {smsLoading ? "Broadcasting Alerts..." : "Dispatch SMS Broadcast"}
+                      {smsLoading ? "Broadcasting..." : `Dispatch ${broadcastMethod.toUpperCase()} Broadcast`}
                     </button>
                   </form>
                 </div>
 
+
                 {/* Broadcast Logs */}
                 <div className="p-5 border dark:border-gray-700 rounded-2xl bg-slate-50/30 dark:bg-gray-900/10 flex flex-col">
-                  <h3 className="font-bold text-sm mb-4 dark:text-white">Live SMS Broadcast Logs</h3>
+                  <h3 className="font-bold text-sm mb-4 dark:text-white">Live Broadcast Logs</h3>
                   <div className="flex-1 overflow-y-auto max-h-72 space-y-3 pr-1">
                     {smsLogs.length === 0 ? (
                       <p className="text-xs text-slate-400 italic">No SMS dispatches logged yet.</p>
@@ -748,6 +1041,275 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 5: ANALYTICS & LOGS */}
+          {adminTab === "analytics" && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow p-6 animate-fadeIn">
+              <div className="flex items-center gap-2 mb-6">
+                <BarChart2 className="text-blue-600" />
+                <h3 className="font-bold text-lg dark:text-white">Analytics & System Logs</h3>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-6">
+                {/* Chart */}
+                <div className="border dark:border-gray-700 rounded-2xl p-5 bg-slate-50/30 dark:bg-gray-900/10">
+                  <h4 className="font-bold text-sm mb-4 dark:text-white">Incident Trends (Recent)</h4>
+                  <div className="h-64 w-full">
+                    {reports.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={
+                          Object.entries(reports.reduce((acc, r) => {
+                            const d = new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                            acc[d] = (acc[d] || 0) + 1;
+                            return acc;
+                          }, {})).map(([date, incidents]) => ({ date, incidents })).slice(-7)
+                        }>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                          <XAxis dataKey="date" tick={{fontSize: 10}} stroke="#9ca3af" />
+                          <YAxis tick={{fontSize: 10}} stroke="#9ca3af" allowDecimals={false} />
+                          <RechartsTooltip 
+                            contentStyle={{ borderRadius: '8px', fontSize: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          />
+                          <Line type="monotone" dataKey="incidents" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-gray-400">No data available</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notifications */}
+                <div className="border dark:border-gray-700 rounded-2xl p-5 bg-slate-50/30 dark:bg-gray-900/10 flex flex-col">
+                  <h4 className="font-bold text-sm mb-4 dark:text-white flex justify-between items-center">
+                    <span>Automated Smart Notifications</span>
+                    <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold">{notifications.length} Logs</span>
+                  </h4>
+                  <div className="flex-1 overflow-y-auto max-h-64 space-y-3 pr-1">
+                    {notifications.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No notifications generated yet.</p>
+                    ) : (
+                      notifications.map(notif => (
+                        <div key={notif.id} className="p-3 border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900/50 flex gap-3">
+                          <div className="mt-0.5">
+                            {notif.type === "Critical_Alert" ? <ShieldAlert size={14} className="text-red-500" /> : <Bell size={14} className="text-blue-500" />}
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{notif.message}</p>
+                            <p className="text-[9px] text-slate-400 mt-1">{new Date(notif.created_at).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: DEEP ANALYTICS */}
+          {adminTab === "deepanalytics" && (
+            <div className="animate-fadeIn space-y-6">
+              {/* Header Row */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-xl dark:text-white flex items-center gap-2">
+                    <Activity className="text-indigo-500" size={22} /> Deep Analytics Centre
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">Real-time intelligence, trends &amp; performance metrics</p>
+                </div>
+                <button
+                  onClick={exportCSV}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20 cursor-pointer shrink-0"
+                >
+                  <Download size={14} /> Export Reports CSV
+                </button>
+              </div>
+
+              {analyticsLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                    <p className="text-xs text-gray-400">Computing analytics...</p>
+                  </div>
+                </div>
+              ) : analyticsData ? (
+                <>
+                  {/* KPI Summary Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {[
+                      { label: "Total Reports", value: analyticsData.summary.total, icon: <FileText size={16}/>, color: "indigo" },
+                      { label: "Resolution Rate", value: `${analyticsData.summary.resolutionRate}%`, icon: <Target size={16}/>, color: "emerald" },
+                      { label: "Critical Cases", value: analyticsData.summary.critical, icon: <ShieldAlert size={16}/>, color: "red" },
+                      { label: "Resolved", value: analyticsData.summary.resolved, icon: <CheckCircle size={16}/>, color: "green" },
+                      { label: "AI Avg Confidence", value: `${analyticsData.summary.avgConfidence}%`, icon: <Zap size={16}/>, color: "amber" },
+                      { label: "Registered Users", value: analyticsData.summary.totalUsers, icon: <Award size={16}/>, color: "blue" },
+                    ].map((kpi, i) => (
+                      <div key={i} className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-4 shadow-sm">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">{kpi.label}</p>
+                        <div className="flex items-end justify-between">
+                          <h2 className="text-xl font-extrabold dark:text-white">{kpi.value}</h2>
+                          <div className={`p-2 rounded-xl bg-${kpi.color}-500/10 text-${kpi.color}-500 shrink-0`}>{kpi.icon}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 14-Day Trend Chart */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                    <h4 className="font-bold text-sm mb-1 dark:text-white">📈 14-Day Incident &amp; Resolution Trend</h4>
+                    <p className="text-xs text-gray-400 mb-5">Daily submitted incidents vs resolutions over the past 2 weeks.</p>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={analyticsData.dailyTrend}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                          <XAxis dataKey="date" tick={{fontSize:9}} stroke="#9ca3af" />
+                          <YAxis tick={{fontSize:9}} stroke="#9ca3af" allowDecimals={false} />
+                          <RechartsTooltip contentStyle={{borderRadius:'10px',fontSize:'12px',border:'none',boxShadow:'0 4px 6px -1px rgb(0 0 0/0.15)'}} />
+                          <Legend wrapperStyle={{fontSize:'11px',paddingTop:'12px'}} />
+                          <Line type="monotone" dataKey="incidents" stroke="#6366f1" strokeWidth={3} dot={{r:3}} activeDot={{r:6}} name="Incidents" />
+                          <Line type="monotone" dataKey="resolved" stroke="#10b981" strokeWidth={3} dot={{r:3}} activeDot={{r:6}} name="Resolved" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Category Chart + Priority Chart */}
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                      <h4 className="font-bold text-sm mb-1 dark:text-white">📊 Reports by Hazard Category</h4>
+                      <p className="text-xs text-gray-400 mb-5">Breakdown of all submissions by hazard type.</p>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analyticsData.categoryBreakdown} layout="vertical" margin={{left:0, right:20}}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+                            <XAxis type="number" tick={{fontSize:9}} stroke="#9ca3af" allowDecimals={false} />
+                            <YAxis type="category" dataKey="name" tick={{fontSize:9}} stroke="#9ca3af" width={110} />
+                            <RechartsTooltip contentStyle={{borderRadius:'10px',fontSize:'12px',border:'none',boxShadow:'0 4px 6px -1px rgb(0 0 0/0.15)'}} />
+                            <Bar dataKey="count" fill="#6366f1" radius={[0,6,6,0]} name="Reports" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                      <h4 className="font-bold text-sm mb-1 dark:text-white">🎯 Priority Distribution</h4>
+                      <p className="text-xs text-gray-400 mb-5">Proportion of each urgency level across all incidents.</p>
+                      <div className="h-64 flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={analyticsData.priorityBreakdown} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={95} paddingAngle={3} label={({name, percent}) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
+                              {analyticsData.priorityBreakdown.map((entry, idx) => {
+                                const PIE_COLORS = {Critical:"#ef4444",High:"#f97316",Medium:"#eab308",Low:"#22c55e"};
+                                return <Cell key={idx} fill={PIE_COLORS[entry.name] || "#6366f1"} />;
+                              })}
+                            </Pie>
+                            <RechartsTooltip contentStyle={{borderRadius:'10px',fontSize:'12px',border:'none',boxShadow:'0 4px 6px -1px rgb(0 0 0/0.15)'}} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Agency Performance + Hotspots */}
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {/* Agency Performance */}
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                      <h4 className="font-bold text-sm mb-1 dark:text-white">🏛️ Agency Response Performance</h4>
+                      <p className="text-xs text-gray-400 mb-5">Resolution rate and case count per assigned response agency.</p>
+                      <div className="space-y-3 overflow-y-auto max-h-72 pr-1">
+                        {analyticsData.agencyPerformance.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic">No agency data available yet.</p>
+                        ) : analyticsData.agencyPerformance.map((ag, i) => (
+                          <div key={i} className="p-3 border dark:border-gray-700 rounded-xl bg-slate-50/50 dark:bg-gray-900/20">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight max-w-[65%]">{ag.agency}</span>
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                                ag.rate >= 70 ? 'bg-green-500/10 text-green-600 border-green-500/20' :
+                                ag.rate >= 40 ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' :
+                                'bg-red-500/10 text-red-600 border-red-500/20'
+                              }`}>{ag.rate}% resolved</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                <div className={`h-1.5 rounded-full transition-all ${
+                                  ag.rate >= 70 ? 'bg-green-500' : ag.rate >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                                }`} style={{width:`${ag.rate}%`}}></div>
+                              </div>
+                              <span className="text-[10px] text-gray-400 shrink-0">{ag.resolved}/{ag.total} cases</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Top Hotspots */}
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                      <h4 className="font-bold text-sm mb-1 dark:text-white">📍 Top Incident Hotspots</h4>
+                      <p className="text-xs text-gray-400 mb-5">Locations with the highest number of reported incidents.</p>
+                      <div className="space-y-2 overflow-y-auto max-h-72 pr-1">
+                        {analyticsData.topHotspots.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic">No location data available yet.</p>
+                        ) : analyticsData.topHotspots.map((hs, i) => {
+                          const maxCount = analyticsData.topHotspots[0]?.count || 1;
+                          return (
+                            <div key={i} className="flex items-center gap-3 py-2 border-b dark:border-gray-700/50 last:border-0">
+                              <span className={`text-[10px] font-extrabold w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                                i === 0 ? 'bg-red-500 text-white' :
+                                i === 1 ? 'bg-orange-500 text-white' :
+                                i === 2 ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-600'
+                              }`}>{i+1}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{hs.location}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                                    <div className="h-1 rounded-full bg-indigo-500 transition-all" style={{width:`${Math.round((hs.count/maxCount)*100)}%`}}></div>
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">{hs.count} reports</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status Breakdown Bar */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-6 shadow-sm">
+                    <h4 className="font-bold text-sm mb-1 dark:text-white">📋 Incident Status Overview</h4>
+                    <p className="text-xs text-gray-400 mb-5">Lifecycle status distribution across all submitted reports.</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {analyticsData.statusBreakdown.map((s, i) => {
+                        const STATUS_COLORS = { Pending: "amber", Approved: "blue", Resolved: "green", Rejected: "red" };
+                        const color = STATUS_COLORS[s.name] || "gray";
+                        const total = analyticsData.summary.total || 1;
+                        const pct = Math.round((s.count / total) * 100);
+                        return (
+                          <div key={i} className={`p-4 rounded-xl border bg-${color}-500/5 border-${color}-500/20`}>
+                            <p className={`text-[10px] font-extrabold uppercase tracking-wider text-${color}-600 mb-1`}>{s.name}</p>
+                            <h3 className="text-2xl font-extrabold dark:text-white">{s.count}</h3>
+                            <p className="text-[10px] text-gray-400 mt-1">{pct}% of all reports</p>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 mt-2">
+                              <div className={`h-1 rounded-full bg-${color}-500`} style={{width:`${pct}%`}}></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/60 p-12 text-center shadow-sm">
+                  <TrendingUp size={40} className="text-indigo-300 mx-auto mb-4" />
+                  <p className="text-sm font-semibold text-gray-400">Click the Deep Analytics tab to load insights</p>
+                  <button onClick={fetchAnalytics} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition cursor-pointer">
+                    Load Analytics
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </main>

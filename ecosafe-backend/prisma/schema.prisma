@@ -17,35 +17,38 @@ model User {
   badge           String           @default("Eco Novice")
   reports         Report[]
   chatbot_history ChatbotHistory[]
+  notifications   Notification[]
 
   @@map("users")
 }
 
 model Report {
-  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
-  user_id                String?  @db.ObjectId
-  user                   User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  title                  String
-  description            String
-  category               String
-  location               String
-  priority               String
-  latitude               String?
-  longitude              String?
-  image                  String?
-  status                 String   @default("Pending")
-  ai_tips                String?
-  ai_image_valid         Int?     @default(-1)
-  ai_image_analysis      String?
-  ai_hazard_type         String?
-  ai_severity            String?
-  ai_confidence          Int?
-  ai_risk_level          String?
-  ai_recommendation      String?
-  ai_assigned_agency     String?
-  ai_verification_status String?  @default("PENDING REVIEW")
-  ai_verification_reason String?
-  created_at             DateTime @default(now())
+  id                      String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id                 String?  @db.ObjectId
+  user                    User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title                   String
+  description             String
+  category                String
+  location                String
+  priority                String
+  latitude                String?
+  longitude               String?
+  image                   String?
+  status                  String   @default("Pending")
+  ai_tips                 String?
+  ai_image_valid          Int?     @default(-1)
+  ai_image_analysis       String?
+  ai_hazard_type          String?
+  ai_severity             String?
+  ai_confidence           Int?
+  ai_risk_level           String?
+  ai_recommendation       String?
+  ai_assigned_agency      String?
+  ai_verification_status  String?  @default("PENDING REVIEW")
+  ai_verification_reason  String?
+  ai_severity_explanation String?
+  ai_detected_hazards     String?
+  created_at              DateTime @default(now())
 
   @@map("reports")
 }
@@ -93,4 +96,17 @@ model ChatbotHistory {
   created_at DateTime @default(now())
 
   @@map("chatbot_history")
+}
+
+model Notification {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id    String?  @db.ObjectId
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title      String
+  message    String
+  type       String
+  read       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@map("notifications")
 }
