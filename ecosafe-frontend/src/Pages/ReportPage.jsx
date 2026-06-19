@@ -45,7 +45,7 @@ export default function ReportHazard() {
 
     setAiPreviewLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/analyze-preview`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/report/analyze-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(f)
@@ -189,7 +189,7 @@ export default function ReportHazard() {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/report`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

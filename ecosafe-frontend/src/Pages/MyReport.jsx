@@ -24,7 +24,7 @@ export default function MyReports() {
       try {
         const token = localStorage.getItem("token");
 
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/myreports`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/myreports`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -43,7 +43,7 @@ export default function MyReports() {
     try {
       const token = localStorage.getItem("token");
 
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/${deleteId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/report/${deleteId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

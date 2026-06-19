@@ -46,7 +46,7 @@ export default function UserDashboard() {
 
     const fetchAllData = async () => {
       try {
-        const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        const baseUrl = import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com";
         const headers = { Authorization: `Bearer ${token}` };
 
         const [reportsRes, profileRes, risksData, notifRes] = await Promise.all([
@@ -79,7 +79,7 @@ export default function UserDashboard() {
     // Define individual fetchers for Socket.IO single-updates
     const fetchReports = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/report`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data = await res.json();
@@ -89,7 +89,7 @@ export default function UserDashboard() {
     
     const fetchNotifications = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/notifications`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/notifications`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) setNotifications(await res.json());
@@ -99,7 +99,7 @@ export default function UserDashboard() {
     fetchAllData();
 
     import("socket.io-client").then(({ default: io }) => {
-      const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+      const socket = io(import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com");
       
       socket.on("new-report", fetchReports);
       socket.on("report-updated", fetchReports);

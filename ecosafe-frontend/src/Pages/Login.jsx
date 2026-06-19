@@ -31,7 +31,7 @@ function Login() {
         return;
       }
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/reset-password`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/reset-password`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: form.email, newPassword: form.password }),
@@ -49,7 +49,7 @@ function Login() {
       }
     } else {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/login`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: form.email, password: form.password }),

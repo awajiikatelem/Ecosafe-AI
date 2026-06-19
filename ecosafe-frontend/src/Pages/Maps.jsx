@@ -96,7 +96,7 @@ export default function AdvancedMap() {
     const loadReports = async () => {
       try {
         const res = await fetch(
-          `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/all-reports`
+          `${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/all-reports`
         );
         const data = await res.json();
         setReports(data);
@@ -108,7 +108,7 @@ export default function AdvancedMap() {
     loadReports();
 
     // Connect socket
-    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+    const socket = io(import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com");
 
     socket.on("new-report", (newReport) => {
       setReports((prev) => {

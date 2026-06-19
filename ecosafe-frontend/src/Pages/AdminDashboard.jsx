@@ -81,7 +81,7 @@ export default function AdminDashboard() {
   /* ================= FETCH REPORTS ================= */
   const fetchReports = useCallback(async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/reports`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/reports`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
   /* ================= FETCH STATS ================= */
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/stats`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/stats`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -143,7 +143,7 @@ export default function AdminDashboard() {
   /* ================= FETCH NOTIFICATIONS ================= */
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/notifications`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/notifications`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -173,7 +173,7 @@ export default function AdminDashboard() {
   const fetchAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/analytics-deep`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/analytics-deep`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -231,7 +231,7 @@ export default function AdminDashboard() {
       if (broadcastMethod === "sms") {
         response = await broadcastSMS({ community: smsCommunity, message: smsMessage }, token);
       } else {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/broadcast-email`, {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/broadcast-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ subject: smsCommunity, message: smsMessage }),
@@ -324,7 +324,7 @@ export default function AdminDashboard() {
     }, 5000);
 
     // Socket.io integration
-    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+    const socket = io(import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com");
     
     socket.on("new-report", () => {
       runFetch();
@@ -348,7 +348,7 @@ export default function AdminDashboard() {
   /* ================= APPROVE REPORT ================= */
   const approve = async (id) => {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/report/${id}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -369,7 +369,7 @@ export default function AdminDashboard() {
   /* ================= REJECT REPORT ================= */
   const reject = async (id) => {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/report/${id}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -390,7 +390,7 @@ export default function AdminDashboard() {
   /* ================= RESOLVE REPORT ================= */
   const resolve = async (id) => {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/report/${id}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/report/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

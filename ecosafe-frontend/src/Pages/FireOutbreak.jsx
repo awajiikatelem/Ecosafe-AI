@@ -34,7 +34,7 @@ export default function ReportFire() {
         image: f.imageBase64 || imageBase64
       };
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/report/analyze-preview`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/report/analyze-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -95,7 +95,7 @@ export default function ReportFire() {
     }
 
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/FireOutbreak`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/api/FireOutbreak`, {
         method: "POST",
         headers,
         body: data,

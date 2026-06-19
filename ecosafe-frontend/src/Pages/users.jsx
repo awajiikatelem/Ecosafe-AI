@@ -30,7 +30,7 @@ export default function AlertBroadcast() {
     try {
       const token = localStorage.getItem("adminToken");
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/alerts`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/alerts`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -77,7 +77,7 @@ export default function AlertBroadcast() {
         aiLevel = "Critical";
       }
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/admin/alerts`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "https://ecosafe-ai-kovp.onrender.com"}/admin/alerts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
